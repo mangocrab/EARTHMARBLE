@@ -246,3 +246,14 @@ test("초기 접속 정보 조회 실패를 안내하고 같은 화면에서 다
   expect(errors).toEqual([]);
   await context.close();
 });
+
+test("외부 로비의 매칭 진입 요청은 로그인 후 실제 서버 매칭을 시작한다", async ({
+  page,
+}) => {
+  await page.goto("/?entry=match");
+  await page.getByLabel("탐사대원 닉네임").fill("온라인연결");
+  await page.getByRole("button", { name: "탐사대원 등록" }).click();
+  await expect(page.getByText("탐사대원을 찾고 있어요")).toBeVisible();
+  await page.getByRole("button", { name: "매칭 취소" }).click();
+  await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
+});

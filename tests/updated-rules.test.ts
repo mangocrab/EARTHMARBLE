@@ -189,7 +189,7 @@ describe("추가 요청 규칙", () => {
     apply(g, "a", { type: "sell", tile: 1 }, base, rng);
     expect(g.players[0].cash).toBe(1750000);
   });
-  it("자동 매각은 모든 건물을 비싼 순서로 먼저, 그 뒤 땅은 싼 순서로 필요한 만큼 판매", () => {
+  it("자동 매각은 모든 건물을 싼 순서로 먼저, 그 뒤 땅은 싼 순서로 필요한 만큼 판매", () => {
     const g = game(),
       p = g.players[0];
     p.cash = 0;
@@ -199,10 +199,10 @@ describe("추가 요청 규칙", () => {
     g.estates[5] = { owner: "a", buildings: [] };
     const plan = autoSalePlan(g, p, 450000);
     expect(plan.slice(0, 4)).toEqual([
-      { type: "sell", tile: 1, building: 2 },
-      { type: "sell", tile: 1, building: 1 },
-      { type: "sell", tile: 11, building: 0 },
       { type: "sell", tile: 1, building: 0 },
+      { type: "sell", tile: 11, building: 0 },
+      { type: "sell", tile: 1, building: 1 },
+      { type: "sell", tile: 1, building: 2 },
     ]);
     expect(plan.slice(4).map((a) => a.tile)).toEqual([1, 3, 11, 5]);
     g.phase = "debt";
@@ -230,10 +230,10 @@ describe("추가 요청 규칙", () => {
     g.estates[1] = { owner: "a", buildings: [true, true, true] };
     g.estates[39] = { owner: "b", buildings: [] };
     g.phase = "debt";
-    g.payment = { amount: 200000 };
+    g.payment = { amount: 100000 };
     apply(g, "a", { type: "auto-sell" }, base, rng);
-    expect(p.cash).toBe(200000);
-    expect(g.estates[1].buildings).toEqual([true, false, false]);
+    expect(p.cash).toBe(100000);
+    expect(g.estates[1].buildings).toEqual([false, false, true]);
     expect(g.estates[39].owner).toBe("b");
   });
 });

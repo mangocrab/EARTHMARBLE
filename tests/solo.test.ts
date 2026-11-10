@@ -54,12 +54,11 @@ function command(c: SoloController, data: Record<string, unknown>) {
   return request;
 }
 function start(c: SoloController, count = 1) {
-  command(c, {
-    type: "solo-start",
-    count,
-    levels: Array(count).fill("normal"),
-    minutes: 30,
-  });
+  command(c, { type: "create", max: count + 1, minutes: 30, allowAI: true });
+  for (let i = 0; i < count; i++)
+    command(c, { type: "ai", difficulty: "normal" });
+  command(c, { type: "ready", ready: true });
+  command(c, { type: "start" });
 }
 describe("브라우저 단독 AI 탐사", () => {
   it.each([1, 2, 3])("AI %i명과 실제 규칙으로 시작한다", (count) => {
@@ -220,4 +219,40 @@ describe("브라우저 단독 AI 탐사", () => {
       }
     expect(() => browserRandom(0)).toThrow();
   });
+});
+
+it("방 생성·AI 초대·준비 후에만 싱글플레이를 시작하고 대기실도 복구한다", () => {
+  const { c, storage, now } = harness();
+  command(c, { type: "create", max: 3, minutes: 20, allowAI: true });
+  expect(c.snapshot().room!.game).toBeUndefined();
+  expect(() => command(c, { type: "start" })).toThrow("AI");
+  command(c, { type: "ai", difficulty: "hard" });
+  command(c, { type: "ai", difficulty: "easy" });
+  expect(() => command(c, { type: "ai", difficulty: "normal" })).toThrow(
+    "빈 자리",
+  );
+  expect(validSave(JSON.parse(storage.getItem(SOLO_KEY)!))).toBe(true);
+  const restored = new SoloController(storage, now, () => 0);
+  expect(restored.snapshot().room!.members.map((m) => m.ai)).toEqual([
+    undefined,
+    "hard",
+    "easy",
+  ]);
+  expect(() => command(restored, { type: "start" })).toThrow("준비");
+  command(restored, { type: "ready", ready: true });
+  command(restored, { type: "start" });
+  const g = restored.snapshot().room!.game!;
+  expect(g.players).toHaveLength(3);
+  expect(g.players[0].ai).toBeUndefined();
+  expect(g.players.slice(1).map((p) => p.ai)).toEqual(["hard", "easy"]);
+  expect(g.players.every((p) => p.cash === 3000000)).toBe(true);
+  expect(validSave(JSON.parse(storage.getItem(SOLO_KEY)!))).toBe(true);
+});
+it("대기실에서 나가면 방이 제거되고 새 방을 만들 수 있다", () => {
+  const { c } = harness();
+  command(c, { type: "create", max: 2, minutes: 10, allowAI: true });
+  command(c, { type: "leave" });
+  expect(c.snapshot().room).toBeNull();
+  command(c, { type: "create", max: 4, minutes: 60, allowAI: true });
+  expect(c.snapshot().room!.minutes).toBe(60);
 });

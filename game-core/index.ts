@@ -248,7 +248,7 @@ export function autoSalePlan(g: Game, p: Player, required: number): Action[] {
     )
     .sort(
       (a, b) =>
-        BOARD[b.tile].costs![b.building] - BOARD[a.tile].costs![a.building] ||
+        BOARD[a.tile].costs![a.building] - BOARD[b.tile].costs![b.building] ||
         a.tile - b.tile ||
         b.building - a.building,
     );
@@ -269,9 +269,15 @@ export function autoSalePlan(g: Game, p: Player, required: number): Action[] {
 }
 function autoSell(g: Game, p: Player, amount: number) {
   for (const a of autoSalePlan(g, p, amount - p.cash))
-    sell(g, p, a.tile!, a.building);
+    sell(g, p, a.tile!, a.building, true);
 }
-export function sell(g: Game, p: Player, id: number, building?: number) {
+export function sell(
+  g: Game,
+  p: Player,
+  id: number,
+  building?: number,
+  automatic = false,
+) {
   const t = BOARD[id],
     e = g.estates[id];
   requireRule(e && e.owner === p.id, "자신의 소유지만 매각할 수 있습니다.");
@@ -284,7 +290,7 @@ export function sell(g: Game, p: Player, id: number, building?: number) {
       "없는 시설입니다.",
     );
     requireRule(
-      building === nextSaleBuilding(g, id),
+      automatic || building === nextSaleBuilding(g, id),
       "비싼 건물부터 순서대로 매각하세요.",
     );
     e.buildings[building] = false;
@@ -646,7 +652,7 @@ function performAction(
       autoSalePlan(g, p, g.payment!.amount - p.cash).length > 0,
       "매각할 자산이 없습니다.",
     );
-    log(g, `${p.name} · 부족분 자동 매각 (건물 우선, 토지는 싼 순서)`);
+    log(g, `${p.name} · 부족분 자동 매각 (싼 건물 우선, 토지도 싼 순서)`);
     autoSell(g, p, g.payment!.amount);
     if (canAutoPay(g)) pauseClock(g, now);
     return;

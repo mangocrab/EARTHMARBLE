@@ -6,3 +6,5 @@ playwright-report/
 *.log
 dist-pages/
 test-results-pages/
+
+test-results-peer/

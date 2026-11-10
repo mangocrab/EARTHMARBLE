@@ -4,15 +4,19 @@ async function start(page: Page, count = "1") {
   await page.goto("./");
   await page.getByLabel("탐사대원 닉네임").fill("혼자대원");
   await page.getByRole("button", { name: "탐사대원 등록" }).click();
-  await expect(page.getByRole("button", { name: "자동 매칭" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "방 참가하기" })).toHaveCount(
-    0,
-  );
-  await page.getByRole("button", { name: "AI와 탐사 시작" }).click();
+  await expect(page.getByRole("button", { name: "자동 매칭" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "방 참가하기" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "AI와 탐사 시작" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "방 만들기" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("AI 대원 수").selectOption(count);
-  await dialog.getByLabel("AI 1 난이도").selectOption("hard");
-  await dialog.getByRole("button", { name: "AI와 탐사 시작" }).click();
+  await dialog.getByRole("button", { name: "탐사대 만들기" }).click();
+  await page.getByLabel("AI 난이도").selectOption("hard");
+  for (let i = 0; i < Number(count); i++)
+    await page.getByRole("button", { name: "AI 초대", exact: true }).click();
+  await page.getByRole("button", { name: "준비 완료", exact: true }).click();
+  await page.getByRole("button", { name: "탐사 시작" }).click();
   await expect(page.locator(".tile")).toHaveCount(40);
 }
 async function wholeBoard(page: Page) {
@@ -213,9 +217,7 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
     .getByRole("dialog")
     .getByRole("button", { name: "새 탐사 준비", exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "AI와 탐사 시작" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
   expect(forbidden).toEqual([]);
   await context.close();
 });
@@ -373,8 +375,8 @@ test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 �
     p.cash = 0;
     p.position = 39;
     g.phase = "toll";
-    g.payment = { amount: 200000, to: g.players[1].id, toll: true };
-    g.settlement = { tile: 39, parts: [200000], amount: 200000 };
+    g.payment = { amount: 100000, to: g.players[1].id, toll: true };
+    g.settlement = { tile: 39, parts: [100000], amount: 100000 };
     g.estates[1] = { owner: p.id, buildings: [true, true, true] };
     g.estates[39] = { owner: g.players[1].id, buildings: [] };
   });
@@ -404,7 +406,7 @@ test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 �
         };
       }, KEY),
     )
-    .toEqual({ buildings: [true, false, false], cash: 0, otherCash: 1700000 });
+    .toEqual({ buildings: [false, false, true], cash: 0, otherCash: 1600000 });
 });
 test("더블로 전 지구 탐사 카드를 뽑으면 한 바퀴 후 재추첨하고 다시 주사위를 굴린다", async ({
   page,
@@ -598,9 +600,52 @@ for (const panel of ["property", "cards"]) {
     });
     await expect(lobby).toBeInViewport();
     await lobby.click();
-    await expect(
-      page.getByRole("button", { name: "AI와 탐사 시작" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 }
+
+test("효과음 음량 저장·음소거·미리듣기를 제공한다", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).soundNotes = 0;
+    const original = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function () {
+      (window as any).soundNotes++;
+      return original.call(this);
+    };
+  });
+  await page.goto("./");
+  await page.getByRole("button", { name: "설정", exact: true }).click();
+  await page.getByRole("slider", { name: "효과음 음량" }).fill("27");
+  expect(await page.evaluate(() => localStorage.getItem("earth-volume"))).toBe(
+    "0.27",
+  );
+  await page.getByRole("button", { name: "효과음 미리듣기" }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).soundNotes))
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "음소거", exact: true }).click();
+  const before = await page.evaluate(() => (window as any).soundNotes);
+  await page.getByRole("button", { name: "효과음 미리듣기" }).click();
+  expect(await page.evaluate(() => (window as any).soundNotes)).toBe(before);
+  await page.reload();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
+  await expect(page.getByRole("slider", { name: "효과음 음량" })).toHaveValue(
+    "0",
+  );
+});
+test("전용 서버 주소가 설정돼 있으면 해당 서버로 매칭을 연결한다", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("earth-server-url", "https://earth-game.example/"),
+  );
+  await page.goto("./");
+  await page.getByLabel("탐사대원 닉네임").fill("온라인대원");
+  await page.getByRole("button", { name: "탐사대원 등록" }).click();
+  await page.route("https://earth-game.example/**", (route) =>
+    route.fulfill({ status: 200, body: "연결된 게임 서버" }),
+  );
+  await page.getByRole("button", { name: "자동 매칭" }).click();
+  await expect(page).toHaveURL("https://earth-game.example/?entry=match");
+});

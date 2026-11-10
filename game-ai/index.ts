@@ -55,7 +55,7 @@ export function analyze(g: Game, p: Player, now = g.deadline - 60000) {
   return { traffic, expectedToll, worstToll, rivalAssets, pressure, reserve };
 }
 
-/** Liquidate only the needed amount: costly buildings first, then cheap land. */
+/** Liquidate only the needed amount: cheap buildings first, then cheap land. */
 export function liquidationPlan(
   g: Game,
   p: Player,

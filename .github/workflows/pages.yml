@@ -1,4 +1,4 @@
-name: Deploy solo game to GitHub Pages
+name: Deploy game to GitHub Pages
 on:
   push:
     branches: [main]
@@ -30,6 +30,8 @@ jobs:
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
       - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get install -y coturn
+      - run: npm run test:peer
       - run: npm run test:pages
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}/

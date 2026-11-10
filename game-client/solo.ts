@@ -11,7 +11,7 @@ import {
   type Action,
 } from "../game-core";
 import { decide } from "../game-ai";
-import type { Snapshot } from "./protocol";
+import type { Snapshot, Room } from "./protocol";
 export const SOLO_KEY = "earthmarble.solo.v1";
 export interface Store {
   getItem(key: string): string | null;
@@ -20,7 +20,9 @@ export interface Store {
 }
 type Identity = { id: string; name: string };
 type LocalRoom = { id: string; version: number; minutes: number; game: Game };
+type Lounge = Omit<Room, "game">;
 type Saved = {
+  lounge?: Lounge | null;
   schema: 1;
   identity: Identity | null;
   room: LocalRoom | null;
@@ -72,6 +74,31 @@ export function validSave(value: unknown): value is Saved {
         v.identity.name.length > 16)
     )
       return false;
+    if (v.lounge) {
+      const l = v.lounge;
+      if (
+        v.room ||
+        !v.identity ||
+        typeof l.id !== "string" ||
+        !integer(l.version, 0) ||
+        !integer(l.max, 2, 4) ||
+        ![10, 20, 30, 60].includes(l.minutes) ||
+        typeof l.allowAI !== "boolean" ||
+        l.host !== v.identity.id ||
+        !Array.isArray(l.members) ||
+        !integer(l.members.length, 1, l.max) ||
+        l.members[0].id !== v.identity.id ||
+        new Set(l.members.map((m) => m.id)).size !== l.members.length ||
+        l.members.some(
+          (m, i) =>
+            typeof m.id !== "string" ||
+            typeof m.name !== "string" ||
+            typeof m.ready !== "boolean" ||
+            (i === 0 ? m.ai !== undefined : !difficulties.includes(m.ai!)),
+        )
+      )
+        return false;
+    }
     if (!v.room) return v.room === null;
     const r = v.room,
       g = r.game;
@@ -202,6 +229,7 @@ export function browserRandom(max: number) {
 export class SoloController {
   identity: Identity | null = null;
   private room: LocalRoom | null = null;
+  private lounge: Lounge | null = null;
   private manualPaused = false;
   private suspendedAt: number | undefined;
   private requests = new Set<string>();
@@ -222,6 +250,7 @@ export class SoloController {
         if (!validSave(data)) throw new Error("Invalid save");
         this.identity = data.identity;
         this.room = data.room;
+        this.lounge = data.lounge ?? null;
         this.requests = new Set(data.requests.slice(-2000));
         this.manualPaused = data.manualPaused;
         this.shift(Math.max(0, this.now() - data.savedAt));
@@ -280,7 +309,9 @@ export class SoloController {
               })),
               game,
             }
-          : null,
+          : this.lounge
+            ? structuredClone(this.lounge)
+            : null,
       matching: false,
       count: 0,
       matchAt: 0,
@@ -299,6 +330,7 @@ export class SoloController {
         schema: 1,
         identity: this.identity,
         room: this.room,
+        lounge: this.lounge,
         savedAt: this.suspendedAt ?? this.now(),
         manualPaused: this.manualPaused,
         requests: [...this.requests].slice(-2000),
@@ -349,7 +381,68 @@ export class SoloController {
       throw new Error("잘못된 요청입니다.");
     if (this.requests.has(a.requestId)) return;
     const now = this.now();
-    if (a.type === "solo-start") {
+    if (a.type === "create") {
+      if (this.room || this.lounge || a.version !== 0)
+        throw new Error("현재 방을 먼저 나가세요.");
+      if (
+        !integer(a.max, 2, 4) ||
+        ![10, 20, 30, 60].includes(a.minutes as number) ||
+        typeof a.allowAI !== "boolean"
+      )
+        throw new Error("방 설정을 확인하세요.");
+      this.lounge = {
+        id: crypto.randomUUID(),
+        version: 0,
+        code: "LOCAL",
+        name: `${this.identity.name}님의 방`,
+        host: this.identity.id,
+        max: a.max as number,
+        minutes: a.minutes as number,
+        allowAI: a.allowAI as boolean,
+        members: [{ ...this.identity, ready: false }],
+      };
+    } else if (this.lounge) {
+      const l = this.lounge;
+      if (a.version !== l.version) throw new Error("방 상태가 변경됐습니다.");
+      if (a.type === "ai") {
+        if (
+          !l.allowAI ||
+          l.members.length >= l.max ||
+          !difficulties.includes(a.difficulty as string)
+        )
+          throw new Error("AI 초대 설정과 빈 자리를 확인하세요.");
+        l.members.push({
+          id: crypto.randomUUID(),
+          name: `탐사봇 ${l.members.length}`,
+          ai: a.difficulty as string,
+          ready: true,
+        });
+      } else if (a.type === "ready") {
+        if (typeof a.ready !== "boolean")
+          throw new Error("준비 상태를 확인하세요.");
+        l.members[0].ready = a.ready;
+      } else if (a.type === "start") {
+        if (l.members.length < 2 || !l.members.every((m) => m.ready))
+          throw new Error("AI를 초대하고 모두 준비하세요.");
+        const users = l.members.map((m) => ({
+          id: m.id,
+          name: m.name,
+          ...(m.ai ? { ai: m.ai as Difficulty } : {}),
+        }));
+        this.room = {
+          id: l.id,
+          version: l.version + 1,
+          minutes: l.minutes,
+          game: createGame(users, now, this.random, l.minutes),
+        };
+        this.lounge = null;
+        this.manualPaused = false;
+        this.suspendedAt = undefined;
+        this.aiAt = now + 900;
+      } else if (a.type === "leave") this.lounge = null;
+      else throw new Error("이 방에서 사용할 수 없는 행동입니다.");
+      l.version++;
+    } else if (a.type === "solo-start") {
       if (this.room) throw new Error("현재 탐사를 먼저 종료하세요.");
       if (
         a.version !== 0 ||

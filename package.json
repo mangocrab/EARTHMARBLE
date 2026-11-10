@@ -16,10 +16,12 @@
     "dev:solo": "vite --mode solo --host 0.0.0.0",
     "build:pages": "tsc --noEmit && vite build --mode pages",
     "preview:pages": "vite preview --mode pages --host 0.0.0.0",
-    "test:pages": "playwright test -c playwright.pages.config.ts"
+    "test:pages": "playwright test -c playwright.pages.config.ts",
+    "test:peer": "playwright test -c playwright.peer.config.ts"
   },
   "dependencies": {
     "express": "^5.1.0",
+    "peerjs": "^1.5.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "socket.io": "^4.8.1",
@@ -35,6 +37,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/three": "^0.180.0",
+    "peer": "^1.0.2",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   }

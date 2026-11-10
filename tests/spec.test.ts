@@ -208,14 +208,15 @@ describe("공개 정보 기반 AI 분석과 자산 선택", () => {
       { type: "sell", tile: 5 },
     ]);
   });
-  it("자동 매각은 비싼 시설부터 매각하고 부족할 때 토지를 판다", () => {
+  it("자동 매각은 싼 시설부터 매각하고 부족할 때 토지를 판다", () => {
     const g = create();
     g.players[0].cash = 0;
     g.phase = "debt";
     g.payment = { amount: 250000 };
     g.estates[1] = { owner: "a", buildings: [true, true, true] };
     const plan = liquidationPlan(g, g.players[0], 250000);
-    for (const a of plan) apply(g, "a", a, start, () => 0);
+    expect(plan.slice(0, 3).map((a) => a.building)).toEqual([0, 1, 2]);
+    apply(g, "a", { type: "auto-sell" }, start, () => 0);
     expect(g.players[0].cash).toBe(250000);
     expect(g.estates[1]).toBeUndefined();
     tick(g, start + 200, () => 0);

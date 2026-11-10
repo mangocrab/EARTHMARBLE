@@ -15,12 +15,14 @@ import {
   type Action,
 } from "../game-core";
 import "./style.css";
+import { getVolume, setVolume, unlockAudio, playSound } from "./audio";
 import { PropertyArt, CardArt } from "./Art";
 const Dice = React.lazy(() =>
   import("./Dice").then((m) => ({ default: m.Dice })),
 );
 import type { State } from "./protocol";
 import type { SoloController } from "./solo";
+import type { PeerRoomController } from "./peer-room";
 const SOLO =
   import.meta.env.MODE === "solo" || import.meta.env.MODE === "pages";
 const money = (n: number) => n.toLocaleString("ko-KR");
@@ -90,11 +92,29 @@ function App() {
   );
   const [overview, setOverview] = useState(true);
   const [paymentOpen, setPaymentOpen] = useState(true);
-  const [soloCount, setSoloCount] = useState(1);
-  const [soloLevels, setSoloLevels] = useState(["normal", "normal", "normal"]);
+  const [volume, updateVolume] = useState(getVolume);
+  const [serverURL, setServerURL] = useState(
+    () =>
+      localStorage.getItem("earth-server-url") ??
+      import.meta.env.VITE_GAME_SERVER_URL ??
+      "",
+  );
+  const onlineEntry = useRef(false);
+  const [onlineIntent, setOnlineIntent] = useState("match");
+  const lastSoundGame = useRef<GameView | null>(null);
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("keydown", unlock);
+    return () => {
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+  }, []);
   const [mapStage, setMapStage] = useState<HTMLDivElement | null>(null);
   const [boardPixels, setBoardPixels] = useState(320);
   const solo = useRef<SoloController | null>(null);
+  const peerRoom = useRef<PeerRoomController | null>(null);
   const [actionDock, setActionDock] = useState<HTMLDivElement | null>(null);
   const [identityMode, setIdentityMode] = useState("standalone");
   const socket = useRef<Socket | null>(null);
@@ -149,6 +169,7 @@ function App() {
     const i = setInterval(() => setNow(Date.now() + clockOffset.current), 200);
     return () => {
       disposed = true;
+      peerRoom.current?.close();
       unsubscribe?.();
       solo.current?.dispose();
       solo.current = null;
@@ -230,6 +251,44 @@ function App() {
     p = g?.players.find((p) => p.id === me?.id),
     turn = g?.players[g.turn],
     myTurn = turn?.id === me?.id;
+  useEffect(() => {
+    const before = lastSoundGame.current;
+    lastSoundGame.current = g ? structuredClone(g) : null;
+    if (!g) return;
+    if (!before) {
+      if (myTurn) playSound("turn");
+      return;
+    }
+    if (g.version === before.version) return;
+    const last = g.log.at(-1) ?? "";
+    if (g.phase === "finished" && before.phase !== "finished")
+      playSound("finish");
+    else if (
+      g.phase === "reveal" &&
+      (before.phase !== "reveal" || g.pendingCard !== before.pendingCard)
+    )
+      playSound("card");
+    else if (g.phase === "animation" && before.phase !== "animation")
+      playSound("roll");
+    else if (last !== before.log.at(-1) && last.includes(" 건설 ("))
+      playSound("build");
+    else if (last !== before.log.at(-1) && last.includes(" 구매 ("))
+      playSound("buy");
+    else if (
+      p &&
+      p.cash !== (before.players.find((q) => q.id === p.id)?.cash ?? p.cash)
+    )
+      playSound(
+        p.cash > (before.players.find((q) => q.id === p.id)?.cash ?? p.cash)
+          ? "gain"
+          : "spend",
+      );
+    else if (
+      g.players.some((q, i) => q.position !== before.players[i]?.position)
+    )
+      playSound("step");
+    else if (myTurn && g.turn !== before.turn) playSound("turn");
+  }, [g, myTurn, p]);
   const [drawOrigin, setDrawOrigin] = useState<React.CSSProperties>({});
   useLayoutEffect(() => {
     if (g?.phase !== "reveal") return;
@@ -422,8 +481,60 @@ function App() {
       setLoading(false);
     }
   }
+  function openOnline(intent: string) {
+    setOnlineIntent(intent);
+    if (!serverURL.trim()) {
+      if (intent === "match") command({ type: "peer-match" });
+      else setPanel(intent);
+      return;
+    }
+    try {
+      const target = new URL(serverURL);
+      if (
+        !["https:", "http:"].includes(target.protocol) ||
+        target.username ||
+        target.password
+      )
+        throw new Error();
+      if (
+        target.origin === location.origin &&
+        target.pathname.replace(/\/+$/, "") ===
+          import.meta.env.BASE_URL.replace(/\/+$/, "")
+      )
+        throw new Error();
+      target.searchParams.set("entry", intent);
+      location.assign(target.href);
+    } catch {
+      setError("접속할 게임 서버의 올바른 http(s) 주소를 설정하세요.");
+      setPanel("online");
+    }
+  }
+  useEffect(() => {
+    if (SOLO || !connected || !me || room || onlineEntry.current) return;
+    const intent = new URL(location.href).searchParams.get("entry");
+    if (!["match", "create", "join"].includes(intent ?? "")) return;
+    onlineEntry.current = true;
+    if (intent === "match") command({ type: "match" });
+    else setPanel(intent!);
+  }, [connected, me, room]);
+  async function getPeerRoom() {
+    if (peerRoom.current) return peerRoom.current;
+    if (!me) throw new Error("닉네임을 등록하세요.");
+    const { PeerRoomController } = await import("./peer-room");
+    const controller = new PeerRoomController(me, (message) => {
+      peerRoom.current = null;
+      setState(solo.current!.snapshot());
+      if (message) setError(message);
+    });
+    peerRoom.current = controller;
+    controller.subscribe((snapshot) => {
+      clockOffset.current = snapshot.serverNow - Date.now();
+      setState(snapshot);
+    });
+    return controller;
+  }
   function command(data: Record<string, unknown>, done?: () => void) {
-    if (!connected || busy) return;
+    if (!connected || (busy && data.type !== "cancel")) return;
     setBusy(true);
     const envelope = {
       requestId: crypto.randomUUID(),
@@ -431,15 +542,69 @@ function App() {
       ...data,
     };
     if (SOLO) {
-      try {
-        solo.current!.command(envelope);
-        setError("");
-        done?.();
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setBusy(false);
-      }
+      void (async () => {
+        let operationPeer: PeerRoomController | undefined;
+        let stale = false;
+        try {
+          if (
+            peerRoom.current &&
+            data.type === "start" &&
+            room?.members.every((m) => m.id === me?.id || !!m.ai)
+          ) {
+            const levels = room.members.filter((m) => m.ai).map((m) => m.ai!);
+            peerRoom.current.close();
+            peerRoom.current = null;
+            const local = solo.current!;
+            const send = (d: Record<string, unknown>) =>
+              local.command({
+                requestId: crypto.randomUUID(),
+                version: local.snapshot().room?.version ?? 0,
+                ...d,
+              });
+            send({
+              type: "create",
+              max: room.max,
+              minutes: room.minutes,
+              allowAI: true,
+            });
+            levels.forEach((difficulty) => send({ type: "ai", difficulty }));
+            send({ type: "ready", ready: true });
+            send({ type: "start" });
+          } else if (
+            data.type === "peer-create" ||
+            data.type === "peer-match" ||
+            data.type === "join"
+          ) {
+            const online = await getPeerRoom();
+            operationPeer = online;
+            if (data.type === "peer-create") await online.create(envelope);
+            else if (data.type === "peer-match") await online.match();
+            else await online.join(data.code, data.password);
+          } else if (peerRoom.current) await peerRoom.current.command(envelope);
+          else solo.current!.command(envelope);
+          if (operationPeer && peerRoom.current !== operationPeer) {
+            stale = true;
+            return;
+          }
+          setError("");
+          done?.();
+        } catch (e) {
+          if (operationPeer && peerRoom.current !== operationPeer) {
+            stale = true;
+            return;
+          }
+          if (
+            ["peer-create", "peer-match", "join"].includes(String(data.type))
+          ) {
+            peerRoom.current?.close();
+            peerRoom.current = null;
+            setState(solo.current!.snapshot());
+          }
+          setError((e as Error).message);
+        } finally {
+          if (!stale) setBusy(false);
+        }
+      })();
       return;
     }
     const deliver = (retry: boolean) =>
@@ -640,7 +805,7 @@ function App() {
               {me.name}
             </span>
           )}
-          {SOLO && g && (
+          {SOLO && g && !peerRoom.current && (
             <>
               <button
                 className="solo-pause"
@@ -748,24 +913,6 @@ function App() {
                   닉네임은 1~16자 · 별도 회원가입 없이 시작
                 </p>
               </form>
-            ) : SOLO ? (
-              <div className="lobby-actions">
-                <button
-                  className="primary"
-                  disabled={!connected || busy}
-                  onClick={() => setPanel("solo")}
-                >
-                  <span>
-                    ◎ <b>AI와 탐사 시작</b>
-                    <small>AI 1~3명 · 난이도 선택 · 자동 저장</small>
-                  </span>
-                  <span>→</span>
-                </button>
-                <p className="fine">
-                  이 기기의 브라우저에 탐사를 저장합니다. 서버 접속 없이
-                  플레이할 수 있어요.
-                </p>
-              </div>
             ) : state.matching ? (
               <div className="matching">
                 <span className="radar">◎</span>
@@ -784,7 +931,9 @@ function App() {
                 <button
                   className="primary"
                   disabled={!connected || busy}
-                  onClick={() => command({ type: "match" })}
+                  onClick={() =>
+                    SOLO ? openOnline("match") : command({ type: "match" })
+                  }
                 >
                   <span>
                     ◎ <b>자동 매칭</b>
@@ -802,7 +951,10 @@ function App() {
                   </span>
                   <span>↗</span>
                 </button>
-                <button onClick={() => setPanel("join")} disabled={!connected}>
+                <button
+                  onClick={() => (SOLO ? openOnline("join") : setPanel("join"))}
+                  disabled={!connected}
+                >
                   <span>
                     ⌁ <b>방 참가하기</b>
                     <small>초대받은 탐사대로 합류</small>
@@ -847,12 +999,28 @@ function App() {
         </main>
       ) : !g ? (
         <main className="waiting">
-          <div className="eyebrow">EXPEDITION LOUNGE / {room.code}</div>
+          <div className="eyebrow">
+            {SOLO && !peerRoom.current
+              ? "SINGLE PLAYER LOUNGE"
+              : `EXPEDITION LOUNGE / ${room.code}`}
+          </div>
           <h1>{room.name}</h1>
           <p>
-            방 코드 <strong>{room.code}</strong> · {room.minutes}분 탐사 · 최대{" "}
-            {room.max}명
+            {SOLO && !peerRoom.current ? (
+              "AI 초대방 · 시작 시 싱글플레이"
+            ) : (
+              <>
+                방 코드 <strong>{room.code}</strong>
+              </>
+            )}{" "}
+            · {room.minutes}분 탐사 · 최대 {room.max}명
           </p>
+          {peerRoom.current && (
+            <p className="fine">
+              방장은 게임이 끝날 때까지 이 창을 열어 두세요. AI만 초대해
+              시작하면 싱글플레이로 전환합니다.
+            </p>
+          )}
           <div className="crew-list">
             {room.members.map((m, i) => (
               <article key={m.id}>
@@ -882,7 +1050,7 @@ function App() {
             ))}
             {Array.from({ length: room.max - room.members.length }, (_, i) => (
               <article className="empty-seat" key={i}>
-                ＋<p>대원을 기다리고 있어요</p>
+                ＋<p>{SOLO ? "AI를 초대하세요" : "대원을 기다리고 있어요"}</p>
               </article>
             ))}
           </div>
@@ -1034,8 +1202,11 @@ function App() {
               <small>환급소에 도착하면 모두 받아요.</small>
             </div>
             <div className="game-meta">
-              {SOLO ? "내 기기에 자동 저장" : `방 ${room.code}`} · 남은 탐사{" "}
-              {Math.max(0, Math.ceil((g.endsAt - gameNow) / 60000))}분
+              {SOLO && !peerRoom.current
+                ? "싱글플레이 · 내 기기에 자동 저장"
+                : `온라인 방 ${room.code}`}{" "}
+              · 남은 탐사 {Math.max(0, Math.ceil((g.endsAt - gameNow) / 60000))}
+              분
             </div>
             <button className="text-button" onClick={() => setPanel("help")}>
               게임 방법 ↗
@@ -1530,7 +1701,7 @@ function App() {
                 )}
                 {p.cash < g.payment!.amount && (
                   <p>
-                    자동 매각은 비싼 건물부터, 이후 싼 땅부터 필요한 만큼
+                    자동 매각은 싼 건물부터, 이후 싼 땅부터 필요한 만큼
                     판매합니다.
                   </p>
                 )}
@@ -1585,7 +1756,7 @@ function App() {
             <h2 id="panel-title">
               {
                 {
-                  solo: "AI 탐사 설정",
+                  online: "온라인 게임 서버 연결",
                   "solo-reset": "새 탐사 준비",
                   journal: "탐사 일지",
                   create: "새 탐사대 만들기",
@@ -1598,71 +1769,36 @@ function App() {
                 }[panel]
               }
             </h2>
-            {panel === "solo" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const form = new FormData(e.currentTarget);
-                  command(
-                    {
-                      type: "solo-start",
-                      count: soloCount,
-                      levels: soloLevels.slice(0, soloCount),
-                      minutes: Number(form.get("minutes")),
-                    },
-                    () => setPanel(""),
-                  );
-                }}
-              >
+            {panel === "online" && (
+              <div className="online-connection">
+                <p>
+                  다른 사람과 매칭하거나 방에 참가하려면 실행 중인 게임 서버에
+                  접속해야 합니다. 서버에서 매칭·방 생성·참가를 이어서
+                  진행합니다.
+                </p>
                 <label>
-                  AI 대원 수
-                  <select
-                    aria-label="AI 대원 수"
-                    value={soloCount}
-                    onChange={(e) => setSoloCount(Number(e.target.value))}
-                  >
-                    {[1, 2, 3].map((n) => (
-                      <option key={n} value={n}>
-                        {n}명 (총 {n + 1}명)
-                      </option>
-                    ))}
-                  </select>
+                  게임 서버 주소
+                  <input
+                    type="url"
+                    placeholder="https://게임서버주소"
+                    value={serverURL}
+                    onChange={(e) => {
+                      setServerURL(e.target.value);
+                      localStorage.setItem("earth-server-url", e.target.value);
+                    }}
+                  />
                 </label>
-                {Array.from({ length: soloCount }, (_, i) => (
-                  <label key={i}>
-                    AI {i + 1} 난이도
-                    <select
-                      aria-label={`AI ${i + 1} 난이도`}
-                      value={soloLevels[i]}
-                      onChange={(e) =>
-                        setSoloLevels((s) =>
-                          s.map((v, n) => (n === i ? e.target.value : v)),
-                        )
-                      }
-                    >
-                      <option value="easy">쉬움</option>
-                      <option value="normal">보통</option>
-                      <option value="hard">어려움</option>
-                    </select>
-                  </label>
-                ))}
-                <label>
-                  탐사 시간
-                  <select name="minutes" defaultValue="30">
-                    {[10, 20, 30, 60].map((n) => (
-                      <option key={n} value={n}>
-                        {n}분
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button className="primary wide" disabled={busy}>
-                  AI와 탐사 시작 →
+                <button
+                  className="primary wide"
+                  disabled={!serverURL.trim()}
+                  onClick={() => openOnline(onlineIntent)}
+                >
+                  게임 서버에서 계속하기
                 </button>
                 <p className="fine">
-                  새로고침 후에도 이 브라우저에서 이어서 플레이합니다.
+                  AI만 초대하는 방은 이 화면에서 방 만들기로 시작할 수 있습니다.
                 </p>
-              </form>
+              </div>
             )}
             {panel === "solo-reset" && (
               <>
@@ -1703,18 +1839,34 @@ function App() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const f = new FormData(e.currentTarget);
+                  if (SOLO && f.get("kind") === "online" && serverURL.trim()) {
+                    openOnline("create");
+                    return;
+                  }
                   command(
                     {
-                      type: "create",
+                      type:
+                        SOLO && f.get("kind") === "online"
+                          ? "peer-create"
+                          : "create",
                       max: Number(f.get("max")),
                       minutes: Number(f.get("minutes")),
                       password: f.get("password"),
-                      allowAI: f.get("ai") === "on",
+                      allowAI: SOLO || f.get("ai") === "on",
                     },
                     () => setPanel(""),
                   );
                 }}
               >
+                {SOLO && (
+                  <label>
+                    방 유형
+                    <select name="kind" defaultValue="ai">
+                      <option value="ai">AI 초대방 · 싱글플레이</option>
+                      <option value="online">친구 초대방 · 온라인</option>
+                    </select>
+                  </label>
+                )}
                 <label>
                   최대 인원
                   <select name="max" defaultValue="4">
@@ -1725,15 +1877,17 @@ function App() {
                     ))}
                   </select>
                 </label>
-                <label>
-                  방 비밀번호
-                  <input
-                    name="password"
-                    type="password"
-                    maxLength={64}
-                    placeholder="비워두면 비밀번호 없이 입장"
-                  />
-                </label>
+                {
+                  <label>
+                    방 비밀번호
+                    <input
+                      name="password"
+                      type="password"
+                      maxLength={64}
+                      placeholder="비워두면 비밀번호 없이 입장"
+                    />
+                  </label>
+                }
                 <label>
                   탐사 시간
                   <select name="minutes" defaultValue="30">
@@ -1744,10 +1898,12 @@ function App() {
                     ))}
                   </select>
                 </label>
-                <label className="checkbox">
-                  <input type="checkbox" name="ai" defaultChecked /> AI 대원
-                  초대 허용
-                </label>
+                {!SOLO && (
+                  <label className="checkbox">
+                    <input type="checkbox" name="ai" defaultChecked /> AI 대원
+                    초대 허용
+                  </label>
+                )}
                 <button className="primary wide" disabled={busy}>
                   탐사대 만들기 →
                 </button>
@@ -1787,27 +1943,79 @@ function App() {
               </form>
             )}
             {panel === "settings" && (
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={reduced}
-                  onChange={(e) => {
-                    setReduced(e.target.checked);
-                    localStorage.setItem(
-                      "earth-reduced",
-                      String(e.target.checked),
-                    );
-                  }}
-                />{" "}
-                움직임 줄이기 (주사위·카드 회전)
-              </label>
+              <>
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={reduced}
+                    onChange={(e) => {
+                      setReduced(e.target.checked);
+                      localStorage.setItem(
+                        "earth-reduced",
+                        String(e.target.checked),
+                      );
+                    }}
+                  />{" "}
+                  움직임 줄이기 (주사위·카드 회전)
+                </label>
+                <label className="volume-setting">
+                  효과음 음량 · {Math.round(volume * 100)}%
+                  <input
+                    aria-label="효과음 음량"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(volume * 100)}
+                    onChange={(e) => {
+                      const v = +e.target.value / 100;
+                      updateVolume(v);
+                      setVolume(v);
+                    }}
+                  />
+                </label>
+                <div className="sound-actions">
+                  <button onClick={() => playSound("gain")}>
+                    효과음 미리듣기
+                  </button>
+                  <button
+                    onClick={() => {
+                      const v = volume === 0 ? 0.4 : 0;
+                      updateVolume(v);
+                      setVolume(v);
+                    }}
+                  >
+                    {volume === 0 ? "소리 켜기" : "음소거"}
+                  </button>
+                </div>
+                {SOLO && (
+                  <label className="server-setting">
+                    전용 게임 서버 주소 (선택)
+                    <input
+                      type="url"
+                      placeholder="https://게임서버주소"
+                      value={serverURL}
+                      onChange={(e) => {
+                        setServerURL(e.target.value);
+                        localStorage.setItem(
+                          "earth-server-url",
+                          e.target.value,
+                        );
+                      }}
+                    />
+                    <small>
+                      주소를 비워 두면 공개 신호 서버를 통해 방장과 직접
+                      연결합니다.
+                    </small>
+                  </label>
+                )}
+              </>
             )}
             {panel === "help" && (
               <div className="help-content">
                 <h3>01 · 탐사대 구성</h3>
                 <p>
                   {SOLO
-                    ? "혼자 AI 1~3명과 플레이합니다. AI 탐사 설정에서 대원 수와 난이도를 선택하면 바로 시작합니다."
+                    ? "방을 만들고 AI를 초대한 뒤 준비 완료와 탐사 시작을 누르세요. AI만 초대한 방은 싱글플레이로 실행됩니다. 사람과 매칭하거나 친구 방에 참가할 수도 있습니다. 온라인 방장은 창을 열어 두어야 합니다."
                     : "2~4명이 함께 플레이합니다. 자동 매칭은 10초마다 확인하고, 개인 방에서는 AI도 초대할 수 있습니다. 모두 준비 후 방장이 시작합니다."}
                 </p>
                 <h3>02 · 주사위와 연구비</h3>
