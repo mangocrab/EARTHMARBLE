@@ -36,7 +36,10 @@ const create = () =>
     () => 0,
   );
 function drawCard(g: Game, id: number) {
-  g.drawPile = [id, ...g.drawPile.filter((i) => i !== id)];
+  g.drawPile =
+    id === 27
+      ? [27, 1, ...g.drawPile.filter((i) => i !== 27 && i !== 1)]
+      : [id, ...g.drawPile.filter((i) => i !== id)];
   g.players[0].position = 2;
   land(g, start, () => 0);
   settle(g);
@@ -123,12 +126,13 @@ describe("30장 카드의 정확한 결과", () => {
       expect(view(g, "b").players[0].held).toEqual([]);
     } else expect(g.discardPile).toContain(id);
     if (id === 26 || id === 28) {
-      expect(p.laps).toBe(0);
-      expect(p.cash).toBe(1500000);
+      expect(p.laps).toBe(1);
+      expect(p.cash).toBe(1700000);
     }
     if (id === 27) {
-      expect(p.cash).toBe(1700000);
+      expect(p.cash).toBe(1900000);
       expect(p.laps).toBe(1);
+      expect(g.lastCard).toBe(1);
     }
     if (id === 30) {
       expect(g.estates[37]).toBeUndefined();
@@ -194,16 +198,17 @@ describe("공개 정보 기반 AI 분석과 자산 선택", () => {
     g.drawPile.reverse();
     expect(decide(g)).toEqual(expected);
   });
-  it("부채를 충당하지 못하는 싼 땅을 먼저 팔아 불필요한 매각을 늘리지 않는다", () => {
+  it("자동 매각은 필요한 금액까지 싼 땅부터 판다", () => {
     const g = create();
     g.players[0].cash = 0;
     g.estates[1] = { owner: "a", buildings: [false, false, false] };
     g.estates[5] = { owner: "a", buildings: [] };
     expect(liquidationPlan(g, g.players[0], 80000)).toEqual([
+      { type: "sell", tile: 1 },
       { type: "sell", tile: 5 },
     ]);
   });
-  it("최적 매각 계획은 시설을 먼저 매각하고 정확한 금액을 확보한다", () => {
+  it("자동 매각은 비싼 시설부터 매각하고 부족할 때 토지를 판다", () => {
     const g = create();
     g.players[0].cash = 0;
     g.phase = "debt";

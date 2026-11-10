@@ -208,6 +208,7 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     await expect(B.locator(".deed-heading .owner-triangle")).toHaveCount(0);
     await A.getByRole("button", { name: "상세 카드 닫기" }).click();
     await A.getByRole("button", { name: "주사위 굴리기" }).click();
+    await until(() => state.room.game.phase === "purchase");
     await expect(A.getByRole("button", { name: "구매 포기" })).toBeVisible();
     await A.getByRole("button", { name: "구매 포기" }).click();
     await playB();

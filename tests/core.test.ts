@@ -217,7 +217,7 @@ describe("카드 덱과 비공개 정보", () => {
     g.phase = "low";
     g.estates[32] = { owner: "b", buildings: [] };
     act(g, "travel", { destination: 0 });
-    expect(g.players[0].cash).toBe(1500000);
+    expect(g.players[0].cash).toBe(1700000);
     expect(g.players[0].freeLow).toBe(false);
     expect(count(g)).toHaveLength(30);
   });
@@ -237,7 +237,8 @@ describe("카드 덱과 비공개 정보", () => {
       const g = game();
       card(g, c.id);
       expect(count(g).sort((a, b) => a - b)).toEqual(CARDS.map((c) => c.id));
-      expect(g.lastCard).toBe(c.id);
+      if (c.id === 27) expect(g.discardPile).toContain(27);
+      else expect(g.lastCard).toBe(c.id);
     }
   });
 });
@@ -253,7 +254,7 @@ describe("만조·간조·타이머·파산", () => {
     expect(g.players[0].cash).toBe(1500000);
     expect(g.players[0].laps).toBe(0);
   });
-  it("만조 3회 실패 후 다음 차례 정상 이동, 탈출 더블 추가 굴림 없음", () => {
+  it("만조 3회 실패 후 다음 차례 정상 이동, 탈출 더블 추가 굴림 적용", () => {
     const g = game();
     const p = g.players[0];
     p.position = 10;
@@ -271,8 +272,8 @@ describe("만조·간조·타이머·파산", () => {
     apply(g, "a", { type: "roll" }, start, () => 1);
     tick(g, start + 2500, randomInt);
     expect(p.position).toBe(14);
-    expect(g.extra).toBe(false);
-    expect(g.doubles).toBe(0);
+    expect(g.extra).toBe(true);
+    expect(g.doubles).toBe(1);
   });
   it("탈출권은 만조에서만 사용 가능", () => {
     const g = game();

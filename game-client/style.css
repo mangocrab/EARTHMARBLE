@@ -2903,3 +2903,142 @@ small {
   border-color: #bac1b2;
   box-shadow: none;
 }
+/* The top card slides out of the actual on-board deck, travels, then flips. */
+.board-center {
+  position: relative;
+}
+.draw-source-deck {
+  position: fixed;
+  left: calc(50% + var(--draw-x, 0px));
+  top: calc(50% + var(--draw-y, 100px));
+  transform: translate(-50%, -50%) rotate(-8deg);
+  width: var(--deck-width, 32px);
+  height: var(--deck-height, 43px);
+  background: #1c4b40;
+  border: 3px solid #eadca6;
+  border-radius: 6px;
+  box-shadow:
+    4px 4px 0 #eee1b4,
+    7px 7px 0 #294f43,
+    10px 10px 0 #eee1b4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #f0dd9f;
+  pointer-events: none;
+}
+.draw-source-deck span {
+  font-size: 14px;
+}
+.draw-source-deck b {
+  font-size: 4px;
+  text-align: center;
+  letter-spacing: 2px;
+}
+.drawn-card {
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: visible;
+  box-shadow: none;
+  transform-style: preserve-3d;
+  animation: deck-card-draw 1.5s ease-in-out both;
+}
+.draw-card-front {
+  position: relative;
+  backface-visibility: hidden;
+  transform: translateZ(1px);
+  border: 4px solid #e8c42d;
+  border-radius: 14px;
+  background: #fff8df;
+  padding: 24px;
+  max-height: calc(100dvh - 50px);
+  overflow: auto;
+  box-shadow: 0 20px 80px #0005;
+}
+.draw-card-back {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  transform: rotateY(180deg);
+  border: 8px double #eadca6;
+  border-radius: 14px;
+  background: repeating-linear-gradient(
+    45deg,
+    #1c4b40 0px,
+    #1c4b40 10px,
+    #24594b 10px,
+    #24594b 12px
+  );
+  color: #eedda6;
+}
+.draw-card-back span {
+  font-size: 80px;
+}
+.draw-card-back b {
+  font-size: 28px;
+  letter-spacing: 5px;
+}
+@keyframes deck-card-draw {
+  0%,
+  12% {
+    transform: translate(var(--draw-x, 0px), var(--draw-y, 100px))
+      scale(var(--draw-scale, 0.1)) rotateZ(-8deg) rotateY(180deg);
+  }
+  35% {
+    transform: translate(
+        calc(var(--draw-x, 0px) + 65px),
+        calc(var(--draw-y, 100px) - 65px)
+      )
+      scale(var(--draw-scale, 0.1)) rotateZ(5deg) rotateY(180deg);
+  }
+  62% {
+    transform: translate(0px, -20px) scale(0.9) rotateZ(0deg) rotateY(180deg);
+  }
+  80% {
+    transform: translate(0px, -10px) scale(1.03) rotateY(90deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@media (max-width: 1190px) {
+  .board-center > .deck-status,
+  .overview .board-center > .deck-status {
+    display: flex;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    pointer-events: none;
+  }
+  .board-center > .deck-status > span {
+    display: none;
+  }
+  .board-center .deck-back {
+    width: 28px;
+    height: 39px;
+    padding: 2px;
+  }
+  .board-center .deck-back > span {
+    font-size: 15px;
+  }
+  .board-center .deck-back small {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawn-card {
+    animation: none;
+  }
+  .draw-source-deck {
+    display: none;
+  }
+}
+.card-reveal-overlay {
+  perspective: 1200px;
+}

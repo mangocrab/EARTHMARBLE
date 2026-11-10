@@ -620,7 +620,7 @@ setInterval(() => {
     }
   }
   if (now - lastAI >= 900) lastAI = now;
-}, 200).unref();
+}, 40).unref();
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(resolve("dist")));
   app.get("/{*path}", (_req, res) => res.sendFile(resolve("dist/index.html")));

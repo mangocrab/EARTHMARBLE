@@ -222,6 +222,55 @@ export function finish(g: Game) {
 function checkWinner(g: Game) {
   if (g.players.filter((p) => !p.bankrupt).length <= 1) finish(g);
 }
+export function estateValue(g: Pick<Game, "estates">, id: number) {
+  const t = BOARD[id],
+    e = g.estates[id];
+  return (
+    t.price! +
+    (e?.buildings ?? []).reduce(
+      (sum, built, i) => sum + (built ? t.costs![i] : 0),
+      0,
+    )
+  );
+}
+export function nextSaleBuilding(g: Pick<Game, "estates">, id: number) {
+  return (g.estates[id]?.buildings ?? [])
+    .flatMap((built, i) => (built ? [i] : []))
+    .sort((a, b) => BOARD[id].costs![b] - BOARD[id].costs![a] || b - a)[0];
+}
+export function autoSalePlan(g: Game, p: Player, required: number): Action[] {
+  const owned = BOARD.filter((t) => g.estates[t.id]?.owner === p.id);
+  const buildings = owned
+    .flatMap((t) =>
+      g.estates[t.id].buildings.flatMap((b, i) =>
+        b ? [{ type: "sell", tile: t.id, building: i }] : [],
+      ),
+    )
+    .sort(
+      (a, b) =>
+        BOARD[b.tile].costs![b.building] - BOARD[a.tile].costs![a.building] ||
+        a.tile - b.tile ||
+        b.building - a.building,
+    );
+  const lands: Action[] = owned
+    .sort((a, b) => a.price! - b.price! || a.id - b.id)
+    .map((t) => ({ type: "sell", tile: t.id }));
+  const result: Action[] = [];
+  let raised = 0;
+  for (const a of [...buildings, ...lands]) {
+    if (raised >= required) break;
+    raised +=
+      (a.building === undefined
+        ? BOARD[a.tile!].price!
+        : BOARD[a.tile!].costs![a.building]) / 2;
+    result.push(a);
+  }
+  return result;
+}
+function autoSell(g: Game, p: Player, amount: number) {
+  for (const a of autoSalePlan(g, p, amount - p.cash))
+    sell(g, p, a.tile!, a.building);
+}
 export function sell(g: Game, p: Player, id: number, building?: number) {
   const t = BOARD[id],
     e = g.estates[id];
@@ -233,6 +282,10 @@ export function sell(g: Game, p: Player, id: number, building?: number) {
         building < 3 &&
         e.buildings[building],
       "없는 시설입니다.",
+    );
+    requireRule(
+      building === nextSaleBuilding(g, id),
+      "비싼 건물부터 순서대로 매각하세요.",
     );
     e.buildings[building] = false;
     p.cash += t.costs![building] / 2;
@@ -303,13 +356,17 @@ function high(g: Game, p: Player) {
 }
 function move(g: Game, steps: number, reward: boolean) {
   const p = active(g);
-  if (reward && steps > 0) {
-    const laps = Math.floor((p.position + steps) / 40);
-    p.laps += laps;
-    p.cash += laps * 200000;
-    if (laps) log(g, `${p.name} · ${laps}회 완주, 연구비 ${laps * 20}만 지급`);
+  for (let i = 0; i < Math.abs(steps); i++) {
+    p.position = (p.position + (steps < 0 ? -1 : 1) + 40) % 40;
+    if (reward && p.position === 0) {
+      p.laps++;
+      p.cash += 200000;
+      log(g, `${p.name} · 출발지 통과, 연구비 20만 지급 (${p.laps}회 완주)`);
+    }
   }
-  p.position = (((p.position + steps) % 40) + 40) % 40;
+}
+export function movementInterval(total: number) {
+  return total > 0 ? (240 * Math.min(6, total)) / total : 240;
 }
 function beginMove(
   g: Game,
@@ -332,7 +389,7 @@ function beginMove(
     after,
   };
   g.phase = "moving";
-  g.animationUntil = now + 240;
+  g.animationUntil = now + movementInterval(Math.abs(steps));
   log(g, `${active(g).name} · ${label} (${Math.abs(steps)}칸)`);
 }
 function transport(g: Game, path: number[], now: number, rng: Random) {
@@ -340,7 +397,7 @@ function transport(g: Game, path: number[], now: number, rng: Random) {
   beginMove(
     g,
     (target - active(g).position + 40) % 40,
-    false,
+    true,
     now,
     `지정 이동 → ${BOARD[target].name}`,
     "transport",
@@ -468,18 +525,18 @@ function resolveCard(g: Game, now: number, rng: Random) {
     return;
   }
   if (id === 27) {
-    beginMove(g, 40, true, now, "카드 효과 · 한 바퀴", "stop");
+    beginMove(g, 40, true, now, "카드 효과 · 한 바퀴 후 재추첨", "land");
     return;
   }
   if (id === 28 || id === 29) {
-    beginMove(g, id === 28 ? -2 : -3, false, now, "카드 효과 · 뒤로 이동");
+    beginMove(g, id === 28 ? -2 : -3, true, now, "카드 효과 · 뒤로 이동");
     return;
   }
   if (id === 30) {
     const ids = Object.keys(g.estates)
       .map(Number)
       .filter((i) => g.estates[i].owner === p.id)
-      .sort((a, b) => BOARD[b].price! - BOARD[a].price!);
+      .sort((a, b) => estateValue(g, b) - estateValue(g, a) || a - b);
     if (ids.length) {
       const i = ids[0];
       for (let n = 2; n >= 0; n--)
@@ -527,7 +584,7 @@ function next(g: Game, now: number) {
   delete g.pausedAt;
   if (g.extra && !active(g).bankrupt && !active(g).tide) {
     log(g, `${active(g).name} · 더블로 한 번 더 굴립니다.`);
-    g.phase = "roll";
+    g.phase = active(g).low ? "low" : "roll";
     g.deadline = now + 60000;
     g.extra = false;
     return;
@@ -576,6 +633,21 @@ function performAction(
       "잘못된 소유지입니다.",
     );
     sell(g, p, a.tile!, a.building);
+    if (canAutoPay(g)) pauseClock(g, now);
+    return;
+  }
+  if (a.type === "auto-sell") {
+    requireRule(
+      (g.phase === "toll" || g.phase === "debt") && !!g.payment,
+      "정산 중에 자동 매각할 수 있습니다.",
+    );
+    requireRule(p.cash < g.payment!.amount, "이미 정산할 연구비가 충분합니다.");
+    requireRule(
+      autoSalePlan(g, p, g.payment!.amount - p.cash).length > 0,
+      "매각할 자산이 없습니다.",
+    );
+    log(g, `${p.name} · 부족분 자동 매각 (건물 우선, 토지는 싼 순서)`);
+    autoSell(g, p, g.payment!.amount);
     if (canAutoPay(g)) pauseClock(g, now);
     return;
   }
@@ -746,6 +818,9 @@ export function tick(g: Game, now: number, rng: Random) {
     if (g.escapeRoll) {
       if (g.dice[0] === g.dice[1]) {
         p.tide = 0;
+        g.doubles = 1;
+        g.extra = true;
+        log(g, `${p.name} · 더블로 만조 탈출! 도착 효과 후 한 번 더 굴립니다.`);
         beginMove(g, g.pendingSteps, true, now, "주사위 이동");
       } else {
         p.tide--;
@@ -767,13 +842,13 @@ export function tick(g: Game, now: number, rng: Random) {
     return true;
   }
   if (g.phase === "moving") {
-    if (now < g.animationUntil) return false;
+    if (now + 0.0001 < g.animationUntil) return false;
     const m = g.motion!;
-    if (m.remaining > 0) {
+    while (m.remaining > 0 && now + 0.0001 >= g.animationUntil) {
       move(g, m.direction, m.reward);
       m.remaining--;
       m.done++;
-      g.animationUntil = now + 240;
+      g.animationUntil += movementInterval(m.total);
     }
     if (!m.remaining) finishMotion(g, now, rng);
     return true;
@@ -799,20 +874,7 @@ export function tick(g: Game, now: number, rng: Random) {
     else if (g.payment) {
       if (p.cash >= g.payment.amount) completePayment(g, now, rng);
       else {
-        const estates = Object.keys(g.estates)
-          .map(Number)
-          .filter((i) => g.estates[i].owner === p.id)
-          .sort((a, b) => BOARD[a].price! - BOARD[b].price!);
-        for (const id of estates) {
-          for (let n = 2; n >= 0 && p.cash < g.payment!.amount; n--)
-            if (g.estates[id].buildings[n]) sell(g, p, id, n);
-          if (
-            p.cash < g.payment.amount &&
-            !g.estates[id].buildings.some(Boolean)
-          )
-            sell(g, p, id);
-          if (p.cash >= g.payment.amount) break;
-        }
+        autoSell(g, p, g.payment.amount);
         if (p.cash >= g.payment.amount) completePayment(g, now, rng);
         else bankrupt(g, p, rng);
       }

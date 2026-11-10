@@ -3,6 +3,7 @@ import {
   active,
   assets,
   rent,
+  autoSalePlan,
   type Game,
   type Player,
   type Action,
@@ -54,69 +55,13 @@ export function analyze(g: Game, p: Player, now = g.deadline - 60000) {
   return { traffic, expectedToll, worstToll, rivalAssets, pressure, reserve };
 }
 
-/** Exact minimum-loss liquidation for the forecast, with legal facility-first
- * combinations per estate. Loss = lost asset value + expected lost toll income.
- * This optimizes the current debt, not the entire stochastic game. */
+/** Liquidate only the needed amount: costly buildings first, then cheap land. */
 export function liquidationPlan(
   g: Game,
   p: Player,
   required: number,
 ): Action[] {
-  if (required <= 0) return [];
-  const { traffic } = analyze(g, p);
-  type Plan = { cash: number; loss: number; actions: Action[] };
-  let states = new Map<number, Plan>([[0, { cash: 0, loss: 0, actions: [] }]]);
-  for (const tile of BOARD.filter((t) => g.estates[t.id]?.owner === p.id)) {
-    const e = g.estates[tile.id],
-      existing = e.buildings.flatMap((v, i) => (v ? [i] : []));
-    const options: Plan[] = [];
-    for (let mask = 0; mask < 1 << existing.length; mask++) {
-      let cash = 0,
-        lostRent = 0;
-      const actions: Action[] = [];
-      for (let n = existing.length - 1; n >= 0; n--)
-        if (mask & (1 << n)) {
-          const building = existing[n];
-          cash += tile.costs![building] / 2;
-          lostRent += tile.rents![building + 1];
-          actions.push({ type: "sell", tile: tile.id, building });
-        }
-      options.push({ cash, loss: cash + traffic[tile.id] * lostRent, actions });
-      if (mask === (1 << existing.length) - 1) {
-        const allCash = cash + tile.price! / 2;
-        options.push({
-          cash: allCash,
-          loss: allCash + traffic[tile.id] * (lostRent + tile.rents![0]),
-          actions: [...actions, { type: "sell", tile: tile.id }],
-        });
-      }
-    }
-    const next = new Map<number, Plan>();
-    for (const plan of states.values())
-      for (const option of options) {
-        const cash = plan.cash + option.cash,
-          loss = plan.loss + option.loss,
-          key = Math.min(required, cash);
-        const prior = next.get(key);
-        if (
-          !prior ||
-          loss < prior.loss ||
-          (loss === prior.loss && cash < prior.cash)
-        )
-          next.set(key, {
-            cash,
-            loss,
-            actions: [...plan.actions, ...option.actions],
-          });
-      }
-    states = next;
-  }
-  return (
-    (
-      states.get(required) ??
-      [...states.values()].sort((a, b) => b.cash - a.cash || a.loss - b.loss)[0]
-    )?.actions ?? []
-  );
+  return autoSalePlan(g, p, required);
 }
 export function decide(g: Game, now = g.deadline - 60000): Action {
   const p = active(g),
@@ -197,19 +142,9 @@ export function decide(g: Game, now = g.deadline - 60000): Action {
     )
       return { type: "use", card: 25 };
     if (p.cash >= g.payment.amount) return { type: "pay" };
-    if (hard)
-      return (
-        liquidationPlan(g, p, g.payment.amount - p.cash)[0] ?? {
-          type: "bankrupt",
-        }
-      );
-    for (const tile of BOARD.filter((t) => g.estates[t.id]?.owner === p.id)) {
-      const building = g.estates[tile.id].buildings.lastIndexOf(true);
-      return building >= 0
-        ? { type: "sell", tile: tile.id, building }
-        : { type: "sell", tile: tile.id };
-    }
-    return { type: "bankrupt" };
+    return autoSalePlan(g, p, g.payment.amount - p.cash).length
+      ? { type: "auto-sell" }
+      : { type: "bankrupt" };
   }
   return { type: "end" };
 }

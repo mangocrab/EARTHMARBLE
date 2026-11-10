@@ -340,7 +340,7 @@ test("뽑기 연출 후 카드 공개, 이후 뽑은 사람 보관함에 들어�
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
   const reveal = page.getByRole("dialog", { name: "공개 탐사 카드" });
   await expect(reveal).toContainText("만조 탈출권");
-  await page.waitForTimeout(1100);
+  await page.waitForTimeout(1600);
   await page.screenshot({ path: "test-results-pages/public-card-mobile.png" });
   const during = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)!).room.game,
@@ -360,4 +360,96 @@ test("뽑기 연출 후 카드 공개, 이후 뽑은 사람 보관함에 들어�
       after.discardPile.length +
       after.players.flatMap((p: any) => p.held).length,
   ).toBe(30);
+});
+
+test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 우선으로 정산한다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game,
+      p = g.players[0];
+    p.cash = 0;
+    p.position = 39;
+    g.phase = "toll";
+    g.payment = { amount: 200000, to: g.players[1].id, toll: true };
+    g.settlement = { tile: 39, parts: [200000], amount: 200000 };
+    g.estates[1] = { owner: p.id, buildings: [true, true, true] };
+    g.estates[39] = { owner: g.players[1].id, buildings: [] };
+  });
+  await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
+  await page.getByRole("button", { name: "카드 돌리기" }).click();
+  await expect(
+    page.getByRole("button", { name: "관측소 매각" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "연구소 매각" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "종합연구센터 매각" }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "상세 카드 닫기" }).click();
+  await page.getByRole("button", { name: "부족분 자동 매각" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate((key) => {
+        const g = JSON.parse(localStorage.getItem(key)!).room.game;
+        return {
+          buildings: g.estates[1].buildings,
+          cash: g.players[0].cash,
+          otherCash: g.players[1].cash,
+        };
+      }, KEY),
+    )
+    .toEqual({ buildings: [true, false, false], cash: 0, otherCash: 1700000 });
+});
+test("더블로 전 지구 탐사 카드를 뽑으면 한 바퀴 후 재추첨하고 다시 주사위를 굴린다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.players[0].position = 0;
+    g.phase = "roll";
+    g.drawPile = [
+      27,
+      24,
+      ...g.drawPile.filter((id: number) => id !== 27 && id !== 24),
+    ];
+  });
+  await page.addInitScript(() => {
+    crypto.getRandomValues = ((b: Uint32Array) => {
+      b.fill(0);
+      return b;
+    }) as typeof crypto.getRandomValues;
+  });
+  await page.reload();
+  const deck = await page.locator(".deck-back").boundingBox();
+  expect(deck!.width).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "주사위 굴리기" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "공개 탐사 카드" }),
+  ).toContainText("전 지구 탐사");
+  const source = await page.locator(".draw-source-deck").boundingBox();
+  expect(
+    Math.abs(source!.x + source!.width / 2 - (deck!.x + deck!.width / 2)),
+  ).toBeLessThan(2);
+  await page.screenshot({ path: "test-results-pages/card-from-deck.png" });
+  await expect(
+    page.getByRole("dialog", { name: "공개 탐사 카드" }),
+  ).toContainText("만조 탈출권", { timeout: 10000 });
+  await expect(page.getByRole("button", { name: "주사위 굴리기" })).toBeVisible(
+    { timeout: 6000 },
+  );
+  const g = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+    KEY,
+  );
+  expect(g.turn).toBe(0);
+  expect(g.doubles).toBe(1);
+  expect(g.players[0].cash).toBe(1700000);
+  expect(g.players[0].held).toEqual([24]);
+  expect(g.players[1].held).toEqual([]);
 });

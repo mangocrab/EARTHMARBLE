@@ -30,7 +30,7 @@ describe("순서가 보이는 보드게임 진행", () => {
     expect(g.phase).toBe("moving");
     expect(g.players[0].position).toBe(37);
     for (let step = 1; step <= a + b; step++) {
-      const at = now + 2400 + step * 240;
+      const at = now + 2400 + step * ((240 * Math.min(6, a + b)) / (a + b));
       tick(g, at, () => 0);
       expect(g.players[0].position).toBe((37 + step) % 40);
       if (step < a + b) {

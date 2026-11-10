@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createPortal } from "react-dom";
 import { io, type Socket } from "socket.io-client";
@@ -8,6 +8,8 @@ import {
   BUILDINGS,
   ZONES,
   remainingMs,
+  nextSaleBuilding,
+  movementInterval,
   type GameView,
   type Player,
   type Action,
@@ -135,7 +137,7 @@ function App() {
       } catch (e) {
         setError((e as Error).message);
       }
-    }, 200);
+    }, 40);
     const visibility = () => {
       if (document.hidden) solo.current?.pause();
       else solo.current?.resume();
@@ -219,6 +221,24 @@ function App() {
     p = g?.players.find((p) => p.id === me?.id),
     turn = g?.players[g.turn],
     myTurn = turn?.id === me?.id;
+  const [drawOrigin, setDrawOrigin] = useState<React.CSSProperties>({});
+  useLayoutEffect(() => {
+    if (g?.phase !== "reveal") return;
+    const deck = document.querySelector(".deck-back")?.getBoundingClientRect();
+    const board = document
+      .querySelector(".board-scroll")
+      ?.getBoundingClientRect();
+    const source = deck && deck.width > 0 ? deck : board;
+    const x = source ? source.left + source.width * 0.5 : innerWidth * 0.5;
+    const y = source ? source.top + source.height * 0.5 : innerHeight * 0.65;
+    setDrawOrigin({
+      "--draw-x": `${x - innerWidth / 2}px`,
+      "--draw-y": `${y - innerHeight / 2}px`,
+      "--draw-scale": `${(deck?.width || 32) / Math.min(390, innerWidth * 0.9)}`,
+      "--deck-width": `${deck?.width || 32}px`,
+      "--deck-height": `${deck?.height || 43}px`,
+    } as React.CSSProperties);
+  }, [g?.phase, g?.deckVersion]);
   const decision = !!(myTurn && g && ["purchase", "build"].includes(g.phase));
   const lastDecision = useRef(false);
   const previousCash = useRef<Record<string, number>>({});
@@ -518,7 +538,15 @@ function App() {
                 )}
                 {p!.cash < (g.payment?.amount || 0) && (
                   <>
-                    {btn("자산 매각은 내 소유지에서", { type: "pay" }, true)}
+                    {btn(
+                      "부족분 자동 매각",
+                      { type: "auto-sell" },
+                      !Object.values(g.estates).some((e) => e.owner === p.id),
+                    )}
+                    <small>
+                      건물을 비싼 순서로 먼저 매각하고, 부족하면 싼 땅부터
+                      매각합니다.
+                    </small>
                     {btn("파산 선언", { type: "bankrupt" })}
                   </>
                 )}
@@ -527,7 +555,10 @@ function App() {
             {g.phase === "low" && (
               <>
                 <p>간조 · 목적지를 선택하세요</p>
-                <p>맵의 원하는 칸을 누르면 이동합니다. (출발 보상 없음)</p>
+                <p>
+                  맵의 원하는 칸을 누르면 이동합니다. (출발지를 지나면 연구비
+                  20만)
+                </p>
                 {btn("이용 포기", { type: "skip" })}
               </>
             )}
@@ -1021,6 +1052,7 @@ function App() {
                       <button
                         className={`tile z${t.zone} ${t.kind === "card" ? "card-tile" : t.id === 39 ? "bigbang-tile" : (t.kind !== "property" || !t.costs?.length) && t.id % 10 !== 0 ? "special-tile" : ""} ${t.id % 10 === 0 ? "corner" : ""} ${g.phase === "low" && myTurn && t.id !== 30 ? "travel-target" : ""}`}
                         key={t.id}
+                        disabled={g.phase === "low" && myTurn && t.id === 30}
                         data-tile={t.id}
                         style={{ gridRow: row, gridColumn: col }}
                         onClick={() => openTile(t.id)}
@@ -1117,7 +1149,10 @@ function App() {
                               <span
                                 key={q.id}
                                 title={q.name}
-                                style={{ background: colors[i] }}
+                                style={{
+                                  background: colors[i],
+                                  animationDuration: `${movementInterval(g.motion?.total ?? 6)}ms`,
+                                }}
                               >
                                 {i + 1}
                               </span>
@@ -1746,7 +1781,19 @@ function App() {
         </div>
       )}
       {g?.phase === "reveal" && g.pendingCard && (
-        <div className="modal-overlay card-reveal-overlay">
+        <div
+          className="modal-overlay card-reveal-overlay"
+          style={drawOrigin}
+          key={`${g.deckVersion}-${g.pendingCard}`}
+        >
+          <div className="draw-source-deck" aria-label="탐사 카드 덱">
+            <span>◉</span>
+            <b>
+              EARTH
+              <br />
+              MARBLE
+            </b>
+          </div>
           <section
             className={`drawn-card ${reduced ? "reduced" : ""}`}
             role="dialog"
@@ -1754,16 +1801,26 @@ function App() {
             aria-label="공개 탐사 카드"
             tabIndex={-1}
           >
-            <small>{turn?.name} 대원이 뽑은 카드 · 모두에게 공개</small>
-            <CardArt id={g.pendingCard} />
-            <h2>{CARDS[g.pendingCard - 1].name}</h2>
-            <p>{CARDS[g.pendingCard - 1].effect}</p>
-            <p className="subtle">{CARDS[g.pendingCard - 1].science}</p>
-            <strong>
-              {CARDS[g.pendingCard - 1].cardType === "consumable"
-                ? "공개 후 뽑은 대원의 보유 카드로 이동합니다."
-                : "공개 후 뽑은 대원에게 효과가 적용됩니다."}
-            </strong>
+            <div className="draw-card-back" aria-hidden="true">
+              <span>◉</span>
+              <b>
+                EARTH
+                <br />
+                MARBLE
+              </b>
+            </div>
+            <div className="draw-card-front">
+              <small>{turn?.name} 대원이 뽑은 카드 · 모두에게 공개</small>
+              <CardArt id={g.pendingCard} />
+              <h2>{CARDS[g.pendingCard - 1].name}</h2>
+              <p>{CARDS[g.pendingCard - 1].effect}</p>
+              <p className="subtle">{CARDS[g.pendingCard - 1].science}</p>
+              <strong>
+                {CARDS[g.pendingCard - 1].cardType === "consumable"
+                  ? "공개 후 뽑은 대원의 보유 카드로 이동합니다."
+                  : "공개 후 뽑은 대원에게 효과가 적용됩니다."}
+              </strong>
+            </div>
           </section>
         </div>
       )}
@@ -1922,26 +1979,33 @@ function App() {
                       {g &&
                         g.estates[selected]?.owner === me?.id &&
                         myTurn &&
-                        g.phase !== "animation" && (
+                        !["animation", "moving", "reveal"].includes(
+                          g.phase,
+                        ) && (
                           <div className="sell-actions">
-                            {g.estates[selected].buildings.map((b, i) =>
-                              b ? (
-                                <button
-                                  key={i}
-                                  onClick={() =>
-                                    action({
-                                      type: "sell",
-                                      tile: selected,
-                                      building: i,
-                                    })
-                                  }
-                                >
-                                  {" "}
-                                  {BUILDINGS[i]} 매각 (
-                                  {money(BOARD[selected].costs![i] / 2)})
-                                </button>
-                              ) : null,
-                            )}
+                            {[...g.estates[selected].buildings.keys()]
+                              .reverse()
+                              .map((i) =>
+                                g.estates[selected].buildings[i] ? (
+                                  <button
+                                    key={i}
+                                    disabled={
+                                      i !== nextSaleBuilding(g, selected)
+                                    }
+                                    onClick={() =>
+                                      action({
+                                        type: "sell",
+                                        tile: selected,
+                                        building: i,
+                                      })
+                                    }
+                                  >
+                                    {" "}
+                                    {BUILDINGS[i]} 매각 (
+                                    {money(BOARD[selected].costs![i] / 2)})
+                                  </button>
+                                ) : null,
+                              )}
                             <button
                               disabled={g.estates[selected].buildings.some(
                                 Boolean,
