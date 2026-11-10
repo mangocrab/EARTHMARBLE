@@ -79,6 +79,10 @@ describe("브라우저 단독 AI 탐사", () => {
     command(c, { type: "action", action: { type: "roll" } });
     advance(2400);
     c.step();
+    for (let i = 0; i < 3; i++) {
+      advance(240);
+      c.step();
+    }
     expect(c.snapshot().room!.game!.players[0].position).toBe(3);
     command(c, { type: "action", action: { type: "skip" } });
     advance(200);
@@ -86,6 +90,10 @@ describe("브라우저 단독 AI 탐사", () => {
     expect(c.snapshot().room!.game!.turn).toBe(1);
     advance(2400);
     c.step();
+    for (let i = 0; i < 3; i++) {
+      advance(240);
+      c.step();
+    }
     expect(c.snapshot().room!.game!.players[1].position).toBe(3);
     expect(
       c.snapshot().room!.game!.log.some((l) => l.includes("탐사봇 1 · 주사위")),

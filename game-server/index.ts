@@ -601,7 +601,7 @@ setInterval(() => {
     const p = active(g),
       m = r.members.find((m) => m.id === p.id);
     if (
-      g.phase !== "animation" &&
+      !["animation", "moving", "reveal"].includes(g.phase) &&
       !g.winner &&
       (g.phase === "end" || remainingMs(g, now) > 0) &&
       now - lastAI >= 900 &&

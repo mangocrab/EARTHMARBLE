@@ -178,7 +178,14 @@ it("독립 세션, 비밀번호 방, 정원/준비/권한/동시성, 재접속�
   expect((await cmd(A.s, request)).ok).toBe(true);
   expect((await cmd(A.s, request)).duplicate).toBe(true);
   expect((await cmd(A.s, { ...request, requestId: "stale" })).ok).toBe(false);
-  await until(() => A.states.at(-1)?.room.game.phase !== "animation");
+  await until(() => {
+    const g = A.states.at(-1)?.room.game;
+    return (
+      g &&
+      !["animation", "moving", "reveal", "end"].includes(g.phase) &&
+      !(g.payment && g.players[g.turn].cash >= g.payment.amount)
+    );
+  }, 40000);
   const latest = A.states.at(-1).room.game;
   A.s.disconnect();
   const reconnect = await connect(a.cookie);
@@ -192,7 +199,8 @@ it("독립 세션, 비밀번호 방, 정원/준비/권한/동시성, 재접속�
   await until(() => !!restored.states.at(-1)?.room?.game);
   expect(restored.states.at(-1).room.game.players).toEqual(latest.players);
   expect(restored.states.at(-1).room.game.version).toBe(latest.version);
-});
+}, 60000);
+
 it("10초 단위 실제 사용자 매칭과 취소, AI 없이 동일 방 배정", async () => {
   const a = await identity("매칭A"),
     b = await identity("매칭B");

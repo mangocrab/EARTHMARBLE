@@ -101,6 +101,22 @@ for (const [width, height] of [
     });
     await start(page, "3");
     await wholeBoard(page);
+    await expect(page.locator('[data-tile="2"]')).toHaveCSS(
+      "border-top-color",
+      "rgb(232, 196, 45)",
+    );
+    await expect(page.locator('[data-tile="5"]')).toHaveCSS(
+      "border-top-color",
+      "rgb(238, 144, 46)",
+    );
+    await expect(page.locator('[data-tile="38"]')).toHaveCSS(
+      "border-top-color",
+      "rgb(238, 144, 46)",
+    );
+    await expect(page.locator('[data-tile="39"]')).toHaveCSS(
+      "border-top-color",
+      "rgb(23, 23, 23)",
+    );
     await expect(
       page.getByRole("button", { name: "주사위 굴리기" }),
     ).toBeInViewport();
@@ -148,9 +164,9 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
   );
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
   await expect(
-    page.getByRole("button", { name: "소유지 구매", exact: true }),
+    page.getByRole("button", { name: "땅 구매", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "소유지 구매", exact: true }).click();
+  await page.getByRole("button", { name: "땅 구매", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -202,4 +218,146 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
   ).toBeVisible();
   expect(forbidden).toEqual([]);
   await context.close();
+});
+
+async function seed(page: Page, edit: (save: any) => void) {
+  const save = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!),
+    KEY,
+  );
+  edit(save);
+  save.savedAt = Date.now();
+  save.manualPaused = false;
+  save.room.game.deadline = save.savedAt + 60000;
+  save.room.game.endsAt = save.savedAt + 1800000;
+  delete save.room.game.pausedAt;
+  await page.addInitScript(
+    ({ key, value }) => localStorage.setItem(key, value),
+    { key: KEY, value: JSON.stringify(save) },
+  );
+  await page.reload();
+  await expect(page.locator(".tile")).toHaveCount(40);
+}
+test("모바일 도착 카드: 세 건물 순차 건설과 자금 표시, 고정 카드 돌리기", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.phase = "build";
+    g.players[0].position = 1;
+    g.players[0].laps = 3;
+    g.estates[1] = { owner: g.players[0].id, buildings: [false, false, false] };
+  });
+  await expect(
+    page.getByRole("dialog", { name: "지진 상세 카드" }),
+  ).toBeVisible();
+  await expect(page.locator(".deed-front")).toContainText("관측소 · 50,000원");
+  await expect(
+    page.getByRole("button", { name: "연구소 건설" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "카드 돌리기" }).click();
+  const before = await page
+    .getByRole("button", { name: "카드 돌리기" })
+    .boundingBox();
+  await page
+    .locator(".deed-scroll")
+    .evaluate((el) => (el.scrollTop = el.scrollHeight));
+  expect(
+    await page.getByRole("button", { name: "카드 돌리기" }).boundingBox(),
+  ).toEqual(before);
+  await page.setViewportSize({ width: 320, height: 568 });
+  await expect(
+    page.getByRole("button", { name: "카드 돌리기" }),
+  ).toBeInViewport();
+  await expect(
+    page.getByRole("button", { name: "종합연구센터 건설" }),
+  ).toBeInViewport();
+  await page.screenshot({
+    path: "test-results-pages/arrival-build-mobile.png",
+  });
+  await page.getByRole("button", { name: "관측소 건설" }).click();
+  await expect(
+    page.locator(".players-panel .cash-float").first(),
+  ).toContainText("-50,000");
+  await page.getByRole("button", { name: "연구소 건설" }).click();
+  await page.getByRole("button", { name: "종합연구센터 건설" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "지진 상세 카드" }),
+  ).toHaveCount(0);
+  const buildings = await page.evaluate(
+    (key) =>
+      JSON.parse(localStorage.getItem(key)!).room.game.estates[1].buildings,
+    KEY,
+  );
+  expect(buildings).toEqual([true, true, true]);
+});
+test("간조는 맵을 눌러 목적지로 이동하고 도착 카드를 연다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    save.room.game.phase = "low";
+    save.room.game.players[0].position = 30;
+    save.room.game.players[0].low = true;
+  });
+  await expect(page.getByLabel("간조 목적지")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "31번 달의 위상", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("달의 위상");
+  await expect(
+    page.getByRole("button", { name: "땅 구매", exact: true }),
+  ).toBeVisible();
+  const position = await page.evaluate(
+    (key) =>
+      JSON.parse(localStorage.getItem(key)!).room.game.players[0].position,
+    KEY,
+  );
+  expect(position).toBe(31);
+});
+test("뽑기 연출 후 카드 공개, 이후 뽑은 사람 보관함에 들어간다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.players[0].position = 39;
+    g.phase = "roll";
+    g.drawPile = [24, ...g.drawPile.filter((id: number) => id !== 24)];
+  });
+  await page.addInitScript(() => {
+    let n = 0;
+    crypto.getRandomValues = ((b: Uint32Array) => {
+      b[0] = n++ % 2;
+      return b;
+    }) as typeof crypto.getRandomValues;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "주사위 굴리기" }).click();
+  const reveal = page.getByRole("dialog", { name: "공개 탐사 카드" });
+  await expect(reveal).toContainText("만조 탈출권");
+  await page.waitForTimeout(1100);
+  await page.screenshot({ path: "test-results-pages/public-card-mobile.png" });
+  const during = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+    KEY,
+  );
+  expect(during.players[0].held).toEqual([]);
+  expect(during.players[1].held).toEqual([]);
+  await expect(reveal).toHaveCount(0, { timeout: 6000 });
+  const after = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+    KEY,
+  );
+  expect(after.players[0].held).toEqual([24]);
+  expect(after.players[1].held).toEqual([]);
+  expect(
+    after.drawPile.length +
+      after.discardPile.length +
+      after.players.flatMap((p: any) => p.held).length,
+  ).toBe(30);
 });

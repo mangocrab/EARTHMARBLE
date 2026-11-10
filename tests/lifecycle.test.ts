@@ -19,8 +19,36 @@ function advance(value: number) {
 async function wait(check: () => boolean) {
   const end = Date.now() + 8000;
   while (!check()) {
-    if (Date.now() > end) throw new Error("Lifecycle state timeout");
+    if (Date.now() > end)
+      throw new Error(
+        "Lifecycle state timeout " +
+          JSON.stringify(
+            clients
+              .filter((c) => c.s.connected)
+              .map((c) => ({
+                phase: c.state?.room?.game?.phase,
+                turn: c.state?.room?.game?.turn,
+                motion: c.state?.room?.game?.motion,
+                players: c.state?.room?.game?.players.map((p: any) => ({
+                  name: p.name,
+                  position: p.position,
+                })),
+                log: c.state?.room?.game?.log.slice(-4),
+              })),
+          ),
+      );
     await new Promise((r) => setTimeout(r, 25));
+  }
+}
+async function finishMovement(c: { state: any }) {
+  await wait(() => c.state.room.game.phase === "moving");
+  for (let i = 0; i < 3; i++) {
+    advance(now + 240);
+    await wait(
+      () =>
+        c.state.room.game.phase !== "moving" ||
+        c.state.room.game.motion.done >= i + 1,
+    );
   }
 }
 // Poll real HTTP readiness without changing the logical server clock.
@@ -188,6 +216,8 @@ it("90초 이후 자동 행동, 재접속 시 제어 복귀와 정산 중복 방
   await wait(() => B.state.room.game.phase === "animation");
   expect(B.state.room.game.players[0].ai).toBeUndefined();
   advance(base + 92400);
+  await finishMovement(B);
+  advance(now + 1000);
   await wait(
     () => B.state.room.game.players[B.state.room.game.turn].id === B.id,
   );
@@ -197,6 +227,7 @@ it("90초 이후 자동 행동, 재접속 시 제어 복귀와 정산 중복 방
   // then verify the disconnected A takes its next fresh turn automatically.
   await command(B, { type: "action", action: { type: "roll" } });
   advance(now + 2400);
+  await finishMovement(B);
   await wait(() => B.state.room.game.phase === "purchase");
   await command(B, { type: "action", action: { type: "skip" } });
   await wait(
@@ -207,6 +238,8 @@ it("90초 이후 자동 행동, 재접속 시 제어 복귀와 정산 중복 방
   advance(now + 1000);
   await wait(() => B.state.room.game.phase === "animation");
   advance(now + 2400);
+  await finishMovement(B);
+  advance(now + 1000);
   await wait(
     () => B.state.room.game.players[B.state.room.game.turn].id === B.id,
   );
@@ -217,6 +250,7 @@ it("90초 이후 자동 행동, 재접속 시 제어 복귀와 정산 중복 방
   ).toBeUndefined();
   await command(B, { type: "action", action: { type: "roll" } });
   advance(now + 2400);
+  await finishMovement(B);
   await wait(
     () =>
       A.state.room.game.players[A.state.room.game.turn].id === A.id &&

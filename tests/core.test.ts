@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import {
   createGame,
   apply,
-  tick,
+  tick as rawTick,
   BOARD,
   CARDS,
   land,
@@ -15,6 +15,16 @@ import {
   type Game,
 } from "../game-core";
 import { decide } from "../game-ai";
+// Advance only presentation stages; payment and player decisions remain explicit.
+function settle(g: Game) {
+  for (let i = 0; ["moving", "reveal"].includes(g.phase) && i < 500; i++)
+    rawTick(g, g.animationUntil, () => 0);
+}
+function tick(g: Game, now: number, rng: (max: number) => number) {
+  const changed = rawTick(g, now, rng);
+  if (changed) settle(g);
+  return changed;
+}
 const start = 10000;
 const users = [
   { id: "a", name: "지구" },
@@ -23,8 +33,10 @@ const users = [
   { id: "d", name: "금성" },
 ];
 const game = (n = 2) => createGame(users.slice(0, n), start, randomInt);
-const act = (g: Game, type: string, extra = {}) =>
+const act = (g: Game, type: string, extra = {}) => {
   apply(g, g.players[g.turn].id, { type, ...extra }, start, randomInt);
+  settle(g);
+};
 const count = (g: Game) => [
   ...g.drawPile,
   ...g.discardPile,
@@ -34,6 +46,7 @@ function card(g: Game, id: number) {
   g.drawPile = [id, ...g.drawPile.filter((x) => x !== id)];
   g.players[0].position = 2;
   land(g, start, randomInt);
+  settle(g);
 }
 describe("명세 데이터와 시작 자산", () => {
   it("40개 고유 칸과 30개 카드, 모든 소유지 과학 설명", () => {
@@ -88,7 +101,7 @@ describe("건설과 누적 통행료", () => {
     g.estates[1].buildings[2] = true;
     expect(rent(g, 1)).toBe(352000);
   });
-  it("0바퀴 건설 금지, 도착당 하나, 단계별 비용과 누적 건물 유지", () => {
+  it("0바퀴 건설 금지, 완주 단계까지 순서대로, 단계별 비용과 누적 건물 유지", () => {
     const g = game();
     g.players[0].position = 1;
     g.estates[1] = { owner: "a", buildings: [false, false, false] };
@@ -183,7 +196,7 @@ describe("카드 덱과 비공개 정보", () => {
     expect(g.phase).toBe("end");
     expect(g.log.at(-1)).toContain("없습니다");
   });
-  it("자신의 카드만 조회, 덱 순서와 보관형 추첨 ID 숨김", () => {
+  it("자신의 카드만 조회, 덱 순서와 상대 손패는 숨기고 뽑은 카드 ID 공개", () => {
     const g = game();
     card(g, 24);
     const a = view(g, "a"),
@@ -193,7 +206,7 @@ describe("카드 덱과 비공개 정보", () => {
     expect(b.players[0].cardCount).toBe(1);
     expect(b.drawPile).toBeUndefined();
     expect(b.discardPile).toBeUndefined();
-    expect(b.lastCard).toBeUndefined();
+    expect(b.lastCard).toBe(24);
   });
   it("22번 이동/면제 효과와 실제 카드 수 분리", () => {
     const g = game();
@@ -299,12 +312,13 @@ describe("만조·간조·타이머·파산", () => {
   });
   it("60초 시간초과 자동 굴림/구매포기 및 애니메이션 시간 분리", () => {
     const g = game();
+    g.players[0].position = 39;
     expect(tick(g, start + 59999, randomInt)).toBe(false);
     expect(tick(g, start + 60000, () => 0)).toBe(true);
     expect(g.phase).toBe("animation");
     expect(tick(g, start + 61000, randomInt)).toBe(false);
     tick(g, start + 62500, randomInt);
-    expect(g.deadline).toBe(start + 62500);
+    expect(g.deadline).toBe(start + 62500 + 480);
     g.phase = "purchase";
     tick(g, g.deadline, randomInt);
     expect(g.phase).toBe("end");
@@ -457,10 +471,11 @@ describe("하나의 행동 시간 예산", () => {
   it("주사위를 늦게 굴려도 연출 시간만 제외하고 남은 시간은 유지한다", () => {
     const g = game();
     const deadline = g.deadline;
+    g.players[0].position = 39;
     apply(g, "a", { type: "roll" }, start + 59000, () => 0);
     tick(g, start + 61400, randomInt);
-    expect(g.deadline).toBe(deadline + 2400);
-    expect(g.deadline - (start + 61400)).toBe(1000);
+    expect(g.deadline).toBe(deadline + 2400 + 480);
+    expect(g.deadline - (start + 61880)).toBe(1000);
   });
   it("만조 탈출권 사용으로 새 60초를 받지 않는다", () => {
     const g = game();
@@ -485,8 +500,8 @@ describe("하나의 행동 시간 예산", () => {
     tick(g, start + 59200, randomInt);
     expect(g.phase).toBe("purchase");
     expect(g.players[0].position).toBe(3);
-    expect(g.deadline).toBe(deadline + 200);
-    expect(g.deadline - (start + 59200)).toBe(1000);
+    expect(g.deadline).toBe(deadline + 200 + 720);
+    expect(g.deadline - (start + 59920)).toBe(1000);
     expect(g.players[1].cash).toBe(1700000);
   });
 });
@@ -543,7 +558,7 @@ it("주사위 연출 중 저장 후 복구해도 남은 시간은 동일하다",
   const restored: Game = JSON.parse(JSON.stringify(g));
   expect(remainingMs(restored, start + 61000)).toBe(1000);
   tick(restored, start + 61400, randomInt);
-  expect(remainingMs(restored, start + 61400)).toBe(1000);
+  expect(remainingMs(restored, start + 61880)).toBe(1000);
   expect(restored.pausedAt).toBeUndefined();
 });
 it("중지 시각이 없는 기존 주사위 스냅샷도 복구한다", () => {
@@ -552,5 +567,5 @@ it("중지 시각이 없는 기존 주사위 스냅샷도 복구한다", () => {
   apply(g, "a", { type: "roll" }, start + 59000, () => 0);
   delete g.pausedAt;
   tick(g, start + 61400, randomInt);
-  expect(remainingMs(g, start + 61400)).toBe(1000);
+  expect(remainingMs(g, start + 61880)).toBe(1000);
 });

@@ -10,7 +10,7 @@ import { createGame, land } from "../../game-core";
 test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산 내역", async ({
   browser,
 }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   const data = mkdtempSync(join(tmpdir(), "earth-browser-sync-")),
     url = "http://127.0.0.1:3202";
   let proc: ChildProcess | undefined, socket: Socket | undefined, state: any;
@@ -124,18 +124,16 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     await until(() => !!state?.room);
     async function cmd(action: any) {
       const response = await new Promise<any>((r, j) =>
-        socket!
-          .timeout(5000)
-          .emit(
-            "command",
-            {
-              type: "action",
-              requestId: randomUUID(),
-              version: state.room.game.version,
-              action,
-            },
-            (e: Error, result: any) => (e ? j(e) : r(result)),
-          ),
+        socket!.timeout(5000).emit(
+          "command",
+          {
+            type: "action",
+            requestId: randomUUID(),
+            version: state.room.game.version,
+            action,
+          },
+          (e: Error, result: any) => (e ? j(e) : r(result)),
+        ),
       );
       expect(response.ok, response.error).toBe(true);
     }
@@ -147,18 +145,22 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
       );
       await cmd({ type: "roll" });
       await until(() => state.room.game.phase === "purchase");
+      await expect(B.locator(".arrival-overlay")).toBeVisible();
       await cmd({ type: "skip" });
       await until(
         () =>
           state.room.game.players[state.room.game.turn].id === pa.id &&
           state.room.game.phase === "roll",
       );
+      await B.getByRole("button", { name: "1번 지진", exact: true }).click();
+      await B.getByRole("button", { name: "카드 돌리기" }).click();
     }
     const A = await a.newPage(),
       B = await b.newPage();
     await Promise.all([A.goto(url), B.goto(url)]);
     await expect(A.locator(".tile")).toHaveCount(40);
     await expect(B.locator(".tile")).toHaveCount(40);
+    await A.getByRole("button", { name: "상세 카드 닫기" }).click();
     await A.getByRole("button", { name: "보유 카드" }).click();
     await expect(
       A.getByRole("img", { name: "만조 탈출권 그림" }),
@@ -171,7 +173,9 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     await B.getByRole("button", { name: "1번 지진", exact: true }).click();
     await B.getByRole("button", { name: "카드 돌리기" }).click();
     await expect(B.locator(".deed-total strong")).toHaveText("2,000");
-    await A.getByRole("button", { name: "시설 건설", exact: true }).click();
+    await A.getByRole("button", { name: "도착한 땅" }).click();
+    await A.getByRole("button", { name: "관측소 건설" }).click();
+    await A.getByRole("button", { name: "건설 마침" }).click();
     await expect(B.locator(".deed-total strong")).toHaveText("12,000");
     await expect(B.locator(".toll-formula")).toHaveText(
       "2,000 + 10,000 = 12,000",
@@ -215,7 +219,20 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     await B.getByRole("button", { name: "카드 돌리기" }).click();
     await expect(B.locator(".deed-back")).toContainText("증서A");
     await A.getByRole("button", { name: "주사위 굴리기" }).click();
-    await expect(A.getByRole("button", { name: "파산 선언" })).toBeVisible();
+    await expect(
+      A.getByRole("dialog", { name: "공개 탐사 카드" }),
+    ).toContainText("빅뱅 연구 프로젝트", { timeout: 10000 });
+    await expect(
+      B.getByRole("dialog", { name: "공개 탐사 카드" }),
+    ).toContainText("빅뱅 연구 프로젝트");
+    await expect(A.getByRole("button", { name: "파산 선언" })).toBeVisible({
+      timeout: 20000,
+    });
+    await B.getByRole("button", {
+      name: "5번 제주 화산섬",
+      exact: true,
+    }).click();
+    await B.getByRole("button", { name: "카드 돌리기" }).click();
     await A.getByRole("button", { name: "파산 선언" }).click();
     await expect(
       B.locator(".deed-back").getByText("은행", { exact: true }),
@@ -227,9 +244,8 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     expect(state.room.game.winner).toEqual([pb.id]);
   } finally {
     socket?.disconnect();
-    await a.close();
-    await b.close();
     await stop();
+    await Promise.allSettled([a.close(), b.close()]);
     rmSync(data, { recursive: true, force: true });
   }
 });

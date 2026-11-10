@@ -155,7 +155,7 @@ export function decide(g: Game, now = g.deadline - 60000): Action {
     return { type: investment(p.position) ? "buy" : "skip" };
   if (g.phase === "build") {
     const i = g.estates[p.position].buildings.findIndex((v) => !v);
-    return { type: investment(p.position, i) ? "build" : "skip" };
+    return { type: investment(p.position, i) ? "build" : "skip", building: i };
   }
   if (g.phase === "low") {
     if (easy) return { type: "travel", destination: 20 };

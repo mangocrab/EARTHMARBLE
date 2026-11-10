@@ -3,7 +3,7 @@ import {
   createGame,
   land,
   apply,
-  tick,
+  tick as rawTick,
   CARDS,
   view,
   type Game,
@@ -15,6 +15,16 @@ import {
   FACE_NORMALS,
   topFace,
 } from "../game-client/dice-orientation";
+// Advance only presentation stages; payment and player decisions remain explicit.
+function settle(g: Game) {
+  for (let i = 0; ["moving", "reveal"].includes(g.phase) && i < 500; i++)
+    rawTick(g, g.animationUntil, () => 0);
+}
+function tick(g: Game, now: number, rng: (max: number) => number) {
+  const changed = rawTick(g, now, rng);
+  if (changed) settle(g);
+  return changed;
+}
 const start = 10000;
 const create = () =>
   createGame(
@@ -29,6 +39,7 @@ function drawCard(g: Game, id: number) {
   g.drawPile = [id, ...g.drawPile.filter((i) => i !== id)];
   g.players[0].position = 2;
   land(g, start, () => 0);
+  settle(g);
 }
 describe("30장 카드의 정확한 결과", () => {
   it.each(CARDS.map((c) => [c.id, c.name] as const))("%i %s", (id) => {

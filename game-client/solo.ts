@@ -32,6 +32,8 @@ const difficulties = ["easy", "normal", "hard"];
 const phases = [
   "roll",
   "animation",
+  "moving",
+  "reveal",
   "purchase",
   "build",
   "toll",
@@ -122,6 +124,29 @@ export function validSave(value: unknown): value is Saved {
       !integer(g.deckVersion, 0) ||
       ![g.deadline, g.endsAt, g.animationUntil].every(finite) ||
       (g.pausedAt !== undefined && !finite(g.pausedAt))
+    )
+      return false;
+    if (g.phase === "moving") {
+      const m = g.motion;
+      if (
+        !m ||
+        !integer(m.remaining, 0, 40) ||
+        !integer(m.total, 0, 40) ||
+        !integer(m.done, 0, 40) ||
+        m.remaining + m.done !== m.total ||
+        ![-1, 1].includes(m.direction) ||
+        typeof m.reward !== "boolean" ||
+        typeof m.label !== "string" ||
+        !["land", "stop", "transport", "high"].includes(m.finish) ||
+        (m.after !== undefined &&
+          (!Array.isArray(m.after) || m.after.some((n) => !integer(n, 0, 39))))
+      )
+        return false;
+    }
+    if (
+      g.phase === "reveal" &&
+      (!integer(g.pendingCard, 1, 30) ||
+        !g.discardPile.includes(g.pendingCard!))
     )
       return false;
     const cards = [
@@ -398,7 +423,7 @@ export class SoloController {
       g = this.room.game;
     let changed = tick(g, now, this.random);
     if (
-      g.phase !== "animation" &&
+      !["animation", "moving", "reveal"].includes(g.phase) &&
       !g.winner &&
       active(g).ai &&
       (g.phase === "end" || remainingMs(g, now) > 0) &&

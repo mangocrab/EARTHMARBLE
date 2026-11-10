@@ -173,12 +173,16 @@ function App() {
     };
   }, [me?.id]);
   useEffect(() => {
-    if (!panel && selected === null) return;
+    if (!panel && selected === null && state.room?.game?.phase !== "reveal")
+      return;
     const before = document.activeElement as HTMLElement;
-    const modal = document.querySelector<HTMLElement>('[role="dialog"]');
+    const modal =
+      document.querySelector<HTMLElement>(
+        '.card-reveal-overlay [role="dialog"]',
+      ) ?? document.querySelector<HTMLElement>('[role="dialog"]');
     const first = () =>
       modal?.querySelector<HTMLElement>("button:not([disabled]),input,select");
-    first()?.focus();
+    (first() ?? modal)?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setPanel("");
@@ -192,7 +196,10 @@ function App() {
         ].filter((n) => !n.closest("[inert]"));
         const a = nodes[0],
           b = nodes.at(-1);
-        if (e.shiftKey && document.activeElement === a) {
+        if (!nodes.length) {
+          e.preventDefault();
+          modal.focus();
+        } else if (e.shiftKey && document.activeElement === a) {
           e.preventDefault();
           b?.focus();
         } else if (!e.shiftKey && document.activeElement === b) {
@@ -206,12 +213,50 @@ function App() {
       document.removeEventListener("keydown", key);
       before?.focus();
     };
-  }, [panel, selected, back]);
+  }, [panel, selected, back, state.room?.game?.phase === "reveal"]);
   const room = state.room,
     g = room?.game,
     p = g?.players.find((p) => p.id === me?.id),
     turn = g?.players[g.turn],
     myTurn = turn?.id === me?.id;
+  const decision = !!(myTurn && g && ["purchase", "build"].includes(g.phase));
+  const lastDecision = useRef(false);
+  const previousCash = useRef<Record<string, number>>({});
+  const [cashChanges, setCashChanges] = useState<
+    { id: string; amount: number; at: number }[]
+  >([]);
+  useEffect(() => {
+    if (!g) return;
+    const changes = g.players.flatMap((q) => {
+      const before = previousCash.current[q.id];
+      return before !== undefined && before !== q.cash
+        ? [{ id: q.id, amount: q.cash - before, at: Date.now() }]
+        : [];
+    });
+    previousCash.current = Object.fromEntries(
+      g.players.map((q) => [q.id, q.cash]),
+    );
+    if (changes.length)
+      setCashChanges((old) => [
+        ...old.filter((c) => Date.now() - c.at < 2400),
+        ...changes,
+      ]);
+  }, [g]);
+  useEffect(() => {
+    if (decision && g && p) {
+      setSelected(p.position);
+      setBack(false);
+    } else if (lastDecision.current || g?.phase === "reveal") setSelected(null);
+    lastDecision.current = decision;
+  }, [decision, g?.phase, p?.position]);
+  const motionText =
+    g?.phase === "moving" && g.motion
+      ? `${turn?.name} · ${g.motion.label} ${g.motion.done}/${g.motion.total}칸`
+      : g?.phase === "reveal"
+        ? `${turn?.name} · 카드 공개 중 · 잠시 후 효과 적용`
+        : g?.phase === "animation"
+          ? `${turn?.name} · 주사위 ${g.dice.join(" + ")} = ${g.pendingSteps}칸`
+          : `${turn?.name ?? ""} · ${g?.phase === "purchase" ? "땅 구매 선택" : g?.phase === "build" ? "시설 건설 선택" : g?.phase === "low" ? "맵에서 간조 목적지를 누르세요" : g?.phase === "roll" ? "주사위를 굴리세요" : g?.phase === "toll" ? "통행료 정산" : g?.phase === "debt" ? "비용 정산" : g?.phase === "end" ? "도착 처리 완료" : "탐사 진행"}`;
   async function login(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
@@ -334,6 +379,10 @@ function App() {
       });
   }
   function openTile(id: number) {
+    if (g?.phase === "low" && myTurn && id !== 30 && !busy && !state.paused) {
+      action({ type: "travel", destination: id });
+      return;
+    }
     setSelected(id);
     setBack(false);
   }
@@ -432,8 +481,8 @@ function App() {
       <div className="action-area">
         {state.paused ? (
           <p>탐사가 일시 정지되었습니다.</p>
-        ) : g.phase === "animation" ? (
-          <p>주사위가 이끄는 곳으로…</p>
+        ) : ["animation", "moving", "reveal"].includes(g.phase) ? (
+          <p>{motionText}</p>
         ) : !myTurn ? (
           <p>{turn?.name} 대원의 탐사를 기다리고 있어요.</p>
         ) : (
@@ -442,33 +491,10 @@ function App() {
               btn(p?.tide ? "만조 탈출 주사위" : "주사위 굴리기 →", {
                 type: "roll",
               })}
-            {g.phase === "purchase" && (
-              <>
-                <p>
-                  {BOARD[p!.position].name} · {money(BOARD[p!.position].price!)}{" "}
-                  연구비
-                </p>
-                {btn(
-                  "소유지 구매",
-                  { type: "buy" },
-                  p!.cash < BOARD[p!.position].price!,
-                )}
-                {btn("구매 포기", { type: "skip" })}
-              </>
-            )}
-            {g.phase === "build" && (
-              <>
-                <p>{BOARD[p!.position].name}에 다음 시설 건설</p>
-                {btn(
-                  "시설 건설",
-                  { type: "build" },
-                  p!.cash <
-                    BOARD[p!.position].costs![
-                      g.estates[p!.position].buildings.findIndex((b) => !b)
-                    ],
-                )}
-                {btn("건설 포기", { type: "skip" })}
-              </>
+            {decision && (
+              <button onClick={() => openTile(p.position)}>
+                도착한 땅 · 구매 / 건설 선택
+              </button>
             )}
             {(g.phase === "toll" || g.phase === "debt") && (
               <>
@@ -501,30 +527,7 @@ function App() {
             {g.phase === "low" && (
               <>
                 <p>간조 · 목적지를 선택하세요</p>
-                <select id="destination" aria-label="간조 목적지">
-                  {BOARD.filter((t) => t.id !== 30).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.id}. {t.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() =>
-                    action({
-                      type: "travel",
-                      destination: Number(
-                        (
-                          document.getElementById(
-                            "destination",
-                          ) as HTMLSelectElement
-                        ).value,
-                      ),
-                    })
-                  }
-                  disabled={busy}
-                >
-                  선택한 곳으로 이동
-                </button>
+                <p>맵의 원하는 칸을 누르면 이동합니다. (출발 보상 없음)</p>
                 {btn("이용 포기", { type: "skip" })}
               </>
             )}
@@ -894,6 +897,17 @@ function App() {
                     {q.bankrupt ? "파산" : turn?.id === q.id ? "TURN" : ""}
                   </span>
                 </div>
+                {cashChanges
+                  .filter((c) => c.id === q.id && now - c.at < 2400)
+                  .map((c) => (
+                    <span
+                      key={c.at}
+                      className={`cash-float ${c.amount > 0 ? "gain" : "loss"}`}
+                    >
+                      {c.amount > 0 ? "+" : ""}
+                      {money(c.amount)}
+                    </span>
+                  ))}
                 <strong>
                   {money(q.cash)}
                   <small> 연구비</small>
@@ -909,6 +923,25 @@ function App() {
                   </span>
                   <span>카드 {q.cardCount}</span>
                 </div>
+                <p
+                  className="player-last-action"
+                  title={
+                    g.lastActions?.[q.id] ??
+                    g.log.findLast(
+                      (line) =>
+                        line.startsWith(q.name + " ·") ||
+                        line.startsWith(q.name + " →"),
+                    )
+                  }
+                >
+                  {g.lastActions?.[q.id] ??
+                    g.log.findLast(
+                      (line) =>
+                        line.startsWith(q.name + " ·") ||
+                        line.startsWith(q.name + " →"),
+                    ) ??
+                    "탐사 준비 중"}
+                </p>
                 {q.tide > 0 && <small>만조 · 탈출 시도 {q.tide}회 남음</small>}
               </article>
             ))}
@@ -986,7 +1019,7 @@ function App() {
                       owner = g.players.findIndex((q) => q.id === e?.owner);
                     return (
                       <button
-                        className={`tile z${t.zone} ${t.id % 10 === 0 ? "corner" : ""}`}
+                        className={`tile z${t.zone} ${t.kind === "card" ? "card-tile" : t.id === 39 ? "bigbang-tile" : (t.kind !== "property" || !t.costs?.length) && t.id % 10 !== 0 ? "special-tile" : ""} ${t.id % 10 === 0 ? "corner" : ""} ${g.phase === "low" && myTurn && t.id !== 30 ? "travel-target" : ""}`}
                         key={t.id}
                         data-tile={t.id}
                         style={{ gridRow: row, gridColumn: col }}
@@ -1099,7 +1132,16 @@ function App() {
                     <h2>
                       지구마블<span>EARTH MARBLE</span>
                     </h2>
-                    <div className="compass">✥</div>
+                    <div
+                      className="live-activity"
+                      role="log"
+                      aria-label="모두의 최근 행동"
+                    >
+                      <strong>{motionText}</strong>
+                      {g.log.slice(-3).map((line, i) => (
+                        <p key={i}>{line}</p>
+                      ))}
+                    </div>
                     {g.phase === "finished" ? (
                       <div className="winner">
                         <h3>탐사 완료!</h3>
@@ -1189,6 +1231,17 @@ function App() {
             <div className="eyebrow">MY EXPEDITION</div>
             <h2>나의 탐사 기록</h2>
             <div className="my-cash">
+              {cashChanges
+                .filter((c) => c.id === p?.id && now - c.at < 2400)
+                .map((c) => (
+                  <span
+                    key={c.at}
+                    className={`cash-float ${c.amount > 0 ? "gain" : "loss"}`}
+                  >
+                    {c.amount > 0 ? "+" : ""}
+                    {money(c.amount)}
+                  </span>
+                ))}
               <small>사용 가능한 연구비</small>
               <strong>{money(p?.cash || 0)}</strong>
               <span>총자산 {money(p ? total(p) : 0)}</span>
@@ -1692,12 +1745,50 @@ function App() {
           </section>
         </div>
       )}
-      {selected !== null && (
-        <div className="modal-overlay" onClick={() => setSelected(null)}>
+      {g?.phase === "reveal" && g.pendingCard && (
+        <div className="modal-overlay card-reveal-overlay">
           <section
-            className={`deed ${back ? "flipped" : ""} ${reduced ? "reduced" : ""}`}
+            className={`drawn-card ${reduced ? "reduced" : ""}`}
             role="dialog"
             aria-modal="true"
+            aria-label="공개 탐사 카드"
+            tabIndex={-1}
+          >
+            <small>{turn?.name} 대원이 뽑은 카드 · 모두에게 공개</small>
+            <CardArt id={g.pendingCard} />
+            <h2>{CARDS[g.pendingCard - 1].name}</h2>
+            <p>{CARDS[g.pendingCard - 1].effect}</p>
+            <p className="subtle">{CARDS[g.pendingCard - 1].science}</p>
+            <strong>
+              {CARDS[g.pendingCard - 1].cardType === "consumable"
+                ? "공개 후 뽑은 대원의 보유 카드로 이동합니다."
+                : "공개 후 뽑은 대원에게 효과가 적용됩니다."}
+            </strong>
+          </section>
+        </div>
+      )}
+      {selected !== null && (
+        <div
+          className={`modal-overlay ${decision && selected === p?.position ? "arrival-overlay" : ""}`}
+          role={decision && selected === p?.position ? "dialog" : undefined}
+          aria-modal={decision && selected === p?.position ? true : undefined}
+          aria-label={BOARD[selected].name + " 상세 카드"}
+          onClick={() => setSelected(null)}
+        >
+          {decision && selected === p?.position && (
+            <aside
+              className="arrival-pass"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {btn(g?.phase === "purchase" ? "구매 포기" : "건설 마침", {
+                type: "skip",
+              })}
+            </aside>
+          )}
+          <section
+            className={`deed ${back ? "flipped" : ""} ${reduced ? "reduced" : ""}`}
+            role={decision && selected === p?.position ? undefined : "dialog"}
+            aria-modal={decision && selected === p?.position ? undefined : true}
             aria-label={BOARD[selected].name + " 상세 카드"}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1708,160 +1799,205 @@ function App() {
             >
               ×
             </button>
-            <div className={`deed-heading z${BOARD[selected].zone}`}>
-              {g?.estates[selected] && (
-                <span
-                  className="owner-triangle"
-                  style={{
-                    background:
-                      colors[
-                        g.players.findIndex(
-                          (p) => p.id === g.estates[selected].owner,
-                        )
-                      ],
-                  }}
-                />
-              )}
-              <small>
-                NO. {String(selected).padStart(2, "0")} /{" "}
-                {ZONES[BOARD[selected].zone]}
-              </small>
-              <h2>{BOARD[selected].name}</h2>
-            </div>
-            <div className="deed-rotor">
-              <div className="deed-front" aria-hidden={back} inert={back}>
-                <div className="deed-art">
-                  <PropertyArt id={selected} />
-                </div>
-                <small>{BOARD[selected].field} · 지구과학 탐사 노트</small>
-                <p>
-                  {BOARD[selected].science ||
-                    {
-                      start:
-                        "지구 탐사의 출발점입니다. 정상 완주마다 연구비 20만을 받고 완주 횟수가 증가합니다.",
-                      high: "달과 태양의 기조력은 조석을 일으킵니다. 만조에서는 최대 세 차례 탈출을 시도합니다.",
-                      low: "해수면이 낮아지는 간조에는 갯벌이 드러납니다. 다음 차례에 탐사 목적지를 선택할 수 있습니다.",
-                      refund:
-                        "모인 자연보호기금을 돌려받습니다. 지급 후 적립금은 0이 됩니다.",
-                      fund: "우주환경을 위한 연구비 15만을 자연보호기금에 적립합니다.",
-                      card: "공용 덱에서 다음 탐사 카드를 뽑습니다. 사용한 즉시 카드는 버림 더미로, 소모품은 개인 보관함으로 이동합니다.",
-                    }[BOARD[selected].kind]}
-                </p>
-              </div>
-              <div className="deed-back" aria-hidden={!back} inert={!back}>
-                {BOARD[selected].price ? (
-                  <>
-                    <p>
-                      소유자{" "}
-                      <b>
-                        {g?.players.find(
-                          (p) => p.id === g.estates[selected]?.owner,
-                        )?.name || "은행"}
-                      </b>
-                    </p>
-                    <p>
-                      구매 가격 <b>{money(BOARD[selected].price!)}</b>
-                    </p>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>시설</th>
-                          <th>건설비</th>
-                          <th>통행료</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td>기본 토지</td>
-                          <td>—</td>
-                          <td>{money(BOARD[selected].rents![0])}</td>
-                        </tr>
-                        {BOARD[selected].costs?.map((cost, i) => (
-                          <tr key={i}>
-                            <td>
-                              {g?.estates[selected]?.buildings[i] ? "✓ " : ""}
-                              {BUILDINGS[i]}
-                            </td>
-                            <td>{money(cost)}</td>
-                            <td>+{money(BOARD[selected].rents![i + 1])}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p>
-                      현재 건설 상태{" "}
-                      <b>
-                        {g?.estates[selected]?.buildings
-                          .map((v, i) => (v ? BUILDINGS[i] : ""))
-                          .filter(Boolean)
-                          .join(" + ") || "시설 없음"}
-                      </b>
-                    </p>
-                    <p className="toll-formula" aria-label="통행료 합산 과정">
-                      {BOARD[selected]
-                        .rents!.filter(
-                          (_n, i) =>
-                            i === 0 || g?.estates[selected]?.buildings[i - 1],
-                        )
-                        .map(money)
-                        .join(" + ")}{" "}
-                      = {money(rent(selected))}
-                    </p>
-                    <div className="deed-total">
-                      <small>현재 누적 통행료</small>
-                      <strong>{money(rent(selected))}</strong>
-                    </div>
-                    {selected === 32 && (
-                      <p>간조 이용료 200,000 · 직접 도착 400,000</p>
-                    )}
-                    {!BOARD[selected].costs?.length && (
-                      <p>특수 소유지는 시설을 건설할 수 없습니다.</p>
-                    )}
-                    {g &&
-                      g.estates[selected]?.owner === me?.id &&
-                      myTurn &&
-                      g.phase !== "animation" && (
-                        <div className="sell-actions">
-                          {g.estates[selected].buildings.map((b, i) =>
-                            b ? (
-                              <button
-                                key={i}
-                                onClick={() =>
-                                  action({
-                                    type: "sell",
-                                    tile: selected,
-                                    building: i,
-                                  })
-                                }
-                              >
-                                {" "}
-                                {BUILDINGS[i]} 매각 (
-                                {money(BOARD[selected].costs![i] / 2)})
-                              </button>
-                            ) : null,
-                          )}
-                          <button
-                            disabled={g.estates[selected].buildings.some(
-                              Boolean,
-                            )}
-                            onClick={() =>
-                              action({ type: "sell", tile: selected })
-                            }
-                          >
-                            토지 매각 ({money(BOARD[selected].price! / 2)})
-                          </button>
-                        </div>
-                      )}
-                  </>
-                ) : (
-                  <p>특수 칸입니다. 앞면에서 효과를 확인하세요.</p>
+            <div className="deed-scroll">
+              <div className={`deed-heading z${BOARD[selected].zone}`}>
+                {g?.estates[selected] && (
+                  <span
+                    className="owner-triangle"
+                    style={{
+                      background:
+                        colors[
+                          g.players.findIndex(
+                            (p) => p.id === g.estates[selected].owner,
+                          )
+                        ],
+                    }}
+                  />
                 )}
+                <small>
+                  NO. {String(selected).padStart(2, "0")} /{" "}
+                  {ZONES[BOARD[selected].zone]}
+                </small>
+                <h2>{BOARD[selected].name}</h2>
+              </div>
+              <div className="deed-rotor">
+                <div className="deed-front" aria-hidden={back} inert={back}>
+                  <div className="deed-art">
+                    <PropertyArt id={selected} />
+                  </div>
+                  {BOARD[selected].price && (
+                    <div className="front-prices">
+                      <b>땅 구매 {money(BOARD[selected].price!)}원</b>
+                      {BOARD[selected].costs?.map((cost, i) => (
+                        <span key={i}>
+                          {BUILDINGS[i]} · {money(cost)}원
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <small>{BOARD[selected].field} · 지구과학 탐사 노트</small>
+                  <p>
+                    {BOARD[selected].science ||
+                      {
+                        start:
+                          "지구 탐사의 출발점입니다. 정상 완주마다 연구비 20만을 받고 완주 횟수가 증가합니다.",
+                        high: "달과 태양의 기조력은 조석을 일으킵니다. 만조에서는 최대 세 차례 탈출을 시도합니다.",
+                        low: "해수면이 낮아지는 간조에는 갯벌이 드러납니다. 다음 차례에 탐사 목적지를 선택할 수 있습니다.",
+                        refund:
+                          "모인 자연보호기금을 돌려받습니다. 지급 후 적립금은 0이 됩니다.",
+                        fund: "우주환경을 위한 연구비 15만을 자연보호기금에 적립합니다.",
+                        card: "공용 덱에서 다음 탐사 카드를 뽑습니다. 사용한 즉시 카드는 버림 더미로, 소모품은 개인 보관함으로 이동합니다.",
+                      }[BOARD[selected].kind]}
+                  </p>
+                </div>
+                <div className="deed-back" aria-hidden={!back} inert={!back}>
+                  {BOARD[selected].price ? (
+                    <>
+                      <p>
+                        소유자{" "}
+                        <b>
+                          {g?.players.find(
+                            (p) => p.id === g.estates[selected]?.owner,
+                          )?.name || "은행"}
+                        </b>
+                      </p>
+                      <p>
+                        구매 가격 <b>{money(BOARD[selected].price!)}</b>
+                      </p>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>시설</th>
+                            <th>건설비</th>
+                            <th>통행료</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>기본 토지</td>
+                            <td>—</td>
+                            <td>{money(BOARD[selected].rents![0])}</td>
+                          </tr>
+                          {BOARD[selected].costs?.map((cost, i) => (
+                            <tr key={i}>
+                              <td>
+                                {g?.estates[selected]?.buildings[i] ? "✓ " : ""}
+                                {BUILDINGS[i]}
+                              </td>
+                              <td>{money(cost)}</td>
+                              <td>+{money(BOARD[selected].rents![i + 1])}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p>
+                        현재 건설 상태{" "}
+                        <b>
+                          {g?.estates[selected]?.buildings
+                            .map((v, i) => (v ? BUILDINGS[i] : ""))
+                            .filter(Boolean)
+                            .join(" + ") || "시설 없음"}
+                        </b>
+                      </p>
+                      <p className="toll-formula" aria-label="통행료 합산 과정">
+                        {BOARD[selected]
+                          .rents!.filter(
+                            (_n, i) =>
+                              i === 0 || g?.estates[selected]?.buildings[i - 1],
+                          )
+                          .map(money)
+                          .join(" + ")}{" "}
+                        = {money(rent(selected))}
+                      </p>
+                      <div className="deed-total">
+                        <small>현재 누적 통행료</small>
+                        <strong>{money(rent(selected))}</strong>
+                      </div>
+                      {selected === 32 && (
+                        <p>간조 이용료 200,000 · 직접 도착 400,000</p>
+                      )}
+                      {!BOARD[selected].costs?.length && (
+                        <p>특수 소유지는 시설을 건설할 수 없습니다.</p>
+                      )}
+                      {g &&
+                        g.estates[selected]?.owner === me?.id &&
+                        myTurn &&
+                        g.phase !== "animation" && (
+                          <div className="sell-actions">
+                            {g.estates[selected].buildings.map((b, i) =>
+                              b ? (
+                                <button
+                                  key={i}
+                                  onClick={() =>
+                                    action({
+                                      type: "sell",
+                                      tile: selected,
+                                      building: i,
+                                    })
+                                  }
+                                >
+                                  {" "}
+                                  {BUILDINGS[i]} 매각 (
+                                  {money(BOARD[selected].costs![i] / 2)})
+                                </button>
+                              ) : null,
+                            )}
+                            <button
+                              disabled={g.estates[selected].buildings.some(
+                                Boolean,
+                              )}
+                              onClick={() =>
+                                action({ type: "sell", tile: selected })
+                              }
+                            >
+                              토지 매각 ({money(BOARD[selected].price! / 2)})
+                            </button>
+                          </div>
+                        )}
+                    </>
+                  ) : (
+                    <p>특수 칸입니다. 앞면에서 효과를 확인하세요.</p>
+                  )}
+                </div>
               </div>
             </div>
             <button className="flip-button" onClick={() => setBack(!back)}>
               ↻ 카드 돌리기 · {back ? "과학 설명" : "게임 정보"}
             </button>
           </section>
+          {decision && selected === p?.position && g && p && (
+            <aside
+              className="arrival-choices"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {g.phase === "purchase"
+                ? btn(
+                    "땅 구매",
+                    { type: "buy" },
+                    p.cash < BOARD[selected].price!,
+                  )
+                : BUILDINGS.map((name, i) => (
+                    <React.Fragment key={name}>
+                      {btn(
+                        `${name} 건설 · ${money(BOARD[selected].costs![i])}`,
+                        { type: "build", building: i },
+                        g.estates[selected].buildings[i] ||
+                          g.estates[selected].buildings.findIndex((b) => !b) !==
+                            i ||
+                          p.laps < i + 1 ||
+                          p.cash < BOARD[selected].costs![i],
+                      )}
+                    </React.Fragment>
+                  ))}
+              {g.phase === "build" && (
+                <small>
+                  위에서 아래로 순서대로 건설 · {p.laps}회 완주
+                  <br />
+                  건설 후 다음 시설을 이어서 지을 수 있습니다.
+                </small>
+              )}
+            </aside>
+          )}
         </div>
       )}
     </>

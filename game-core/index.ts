@@ -36,6 +36,8 @@ export interface Estate {
 export type Phase =
   | "roll"
   | "animation"
+  | "moving"
+  | "reveal"
   | "purchase"
   | "build"
   | "toll"
@@ -64,6 +66,17 @@ export interface Game {
   endsAt: number;
   animationUntil: number;
   pendingSteps: number;
+  motion?: {
+    remaining: number;
+    direction: number;
+    reward: boolean;
+    total: number;
+    done: number;
+    label: string;
+    finish: "land" | "stop" | "transport" | "high";
+    after?: number[];
+  };
+  pendingCard?: number;
   escapeRoll: boolean;
   fund: number;
   drawPile: number[];
@@ -71,6 +84,7 @@ export interface Game {
   deckVersion: number;
   payment?: Payment;
   log: string[];
+  lastActions?: Record<string, string>;
   lastCard?: number;
   winner?: string[];
   settlement?: { tile: number; parts: number[]; amount: number };
@@ -164,6 +178,7 @@ export function createGame(
   };
 }
 function log(g: Game, text: string) {
+  (g.lastActions ??= {})[active(g).id] = text;
   g.log.push(text);
   g.log = g.log.slice(-100);
 }
@@ -270,7 +285,10 @@ function completePayment(g: Game, now: number, rng: Random) {
   p.cash -= v.amount;
   if (v.to) g.players.find((x) => x.id === v.to)!.cash += v.amount;
   else if (v.fund) g.fund += v.amount;
-  log(g, `${p.name} · ${v.amount.toLocaleString()} 연구비 지급 완료`);
+  log(
+    g,
+    `${p.name} · ${v.to ? g.players.find((q) => q.id === v.to)!.name + "에게 " : "은행에 "}${v.amount.toLocaleString()} 연구비 지급 완료`,
+  );
   g.payment = undefined;
   if (v.after?.length) transport(g, v.after, now, rng);
   else stop(g);
@@ -293,17 +311,59 @@ function move(g: Game, steps: number, reward: boolean) {
   }
   p.position = (((p.position + steps) % 40) + 40) % 40;
 }
+function beginMove(
+  g: Game,
+  steps: number,
+  reward: boolean,
+  now: number,
+  label: string,
+  finish: NonNullable<Game["motion"]>["finish"] = "land",
+  after?: number[],
+) {
+  pauseClock(g, now);
+  g.motion = {
+    remaining: Math.abs(steps),
+    direction: steps < 0 ? -1 : 1,
+    reward,
+    total: Math.abs(steps),
+    done: 0,
+    label,
+    finish,
+    after,
+  };
+  g.phase = "moving";
+  g.animationUntil = now + 240;
+  log(g, `${active(g).name} · ${label} (${Math.abs(steps)}칸)`);
+}
 function transport(g: Game, path: number[], now: number, rng: Random) {
-  const p = active(g),
-    [target, ...after] = path;
-  p.position = target;
-  const e = g.estates[target];
-  if (after.length) {
-    if (e && e.owner !== p.id) {
-      pay(g, p, { amount: rent(g, target), to: e.owner, after }, now);
-      return;
-    }
-    transport(g, after, now, rng);
+  const [target, ...after] = path;
+  beginMove(
+    g,
+    (target - active(g).position + 40) % 40,
+    false,
+    now,
+    `지정 이동 → ${BOARD[target].name}`,
+    "transport",
+    after,
+  );
+}
+function finishMotion(g: Game, now: number, rng: Random) {
+  const m = g.motion!,
+    p = active(g);
+  delete g.motion;
+  resumeClock(g, now);
+  if (m.finish === "high") high(g, p);
+  else if (m.finish === "stop") stop(g);
+  else if (m.finish === "transport" && m.after?.length) {
+    const e = g.estates[p.position];
+    if (e && e.owner !== p.id)
+      pay(
+        g,
+        p,
+        { amount: rent(g, p.position), to: e.owner, after: m.after },
+        now,
+      );
+    else transport(g, m.after, now, rng);
   } else land(g, now, rng);
 }
 export function draw(g: Game, rng: Random) {
@@ -325,13 +385,27 @@ function drawEffect(g: Game, now: number, rng: Random) {
     return;
   }
   g.lastCard = id;
+  // The drawn card remains in the discard pile during the public reveal so
+  // physical card accounting stays exact across saves and reconnects.
+  g.discardPile.push(id);
+  g.pendingCard = id;
+  g.phase = "reveal";
+  g.animationUntil = now + 3600;
+  pauseClock(g, now);
+  log(g, `${p.name} · 카드 공개: ${CARDS[id - 1].name}`);
+}
+function resolveCard(g: Game, now: number, rng: Random) {
+  const p = active(g),
+    id = g.pendingCard!;
+  delete g.pendingCard;
+  resumeClock(g, now);
   if (CARDS[id - 1].cardType === "consumable") {
+    g.discardPile.splice(g.discardPile.indexOf(id), 1);
     p.held.push(id);
-    log(g, `${p.name} · 보관형 카드 획득`);
+    log(g, `${p.name} · ${CARDS[id - 1].name} → 보유 카드`);
     stop(g);
     return;
   }
-  g.discardPile.push(id);
   log(g, `${p.name} · ${CARDS[id - 1].name}: ${CARDS[id - 1].effect}`);
   const gains: Record<number, number> = {
     1: 200000,
@@ -382,8 +456,7 @@ function drawEffect(g: Game, now: number, rng: Random) {
   };
   if (id in destinations) {
     if (id === 22) p.freeLow = true;
-    p.position = destinations[id];
-    land(g, now, rng);
+    transport(g, [destinations[id]], now, rng);
     return;
   }
   if (id === 20 || id === 21) {
@@ -391,17 +464,15 @@ function drawEffect(g: Game, now: number, rng: Random) {
     return;
   }
   if (id === 23) {
-    high(g, p);
+    beginMove(g, (10 - p.position + 40) % 40, false, now, "만조 이동", "high");
     return;
   }
   if (id === 27) {
-    move(g, 40, true);
-    stop(g);
+    beginMove(g, 40, true, now, "카드 효과 · 한 바퀴", "stop");
     return;
   }
   if (id === 28 || id === 29) {
-    move(g, id === 28 ? -2 : -3, false);
-    land(g, now, rng);
+    beginMove(g, id === 28 ? -2 : -3, false, now, "카드 효과 · 뒤로 이동");
     return;
   }
   if (id === 30) {
@@ -445,7 +516,7 @@ export function land(g: Game, now: number, rng: Random) {
     stop(g);
   } else if (t.kind === "refund") {
     p.cash += g.fund;
-    log(g, `자연보호기금 ${g.fund.toLocaleString()} 환급`);
+    log(g, `${p.name} · 자연보호기금 ${g.fund.toLocaleString()} 환급`);
     g.fund = 0;
     stop(g);
   } else if (t.kind === "fund") pay(g, p, { amount: 150000, fund: true }, now);
@@ -455,6 +526,7 @@ function next(g: Game, now: number) {
   if (g.phase === "finished") return;
   delete g.pausedAt;
   if (g.extra && !active(g).bankrupt && !active(g).tide) {
+    log(g, `${active(g).name} · 더블로 한 번 더 굴립니다.`);
     g.phase = "roll";
     g.deadline = now + 60000;
     g.extra = false;
@@ -495,7 +567,10 @@ function performAction(
   requireRule(active(g).id === actor, "자신의 차례가 아닙니다.");
   const p = active(g);
   if (a.type === "sell") {
-    requireRule(g.phase !== "animation", "이동 중에는 매각할 수 없습니다.");
+    requireRule(
+      !["animation", "moving", "reveal"].includes(g.phase),
+      "연출 중에는 매각할 수 없습니다.",
+    );
     requireRule(
       Number.isInteger(a.tile) && !!BOARD[a.tile!]?.price,
       "잘못된 소유지입니다.",
@@ -519,6 +594,7 @@ function performAction(
     if (a.card === 24) {
       requireRule(g.phase === "roll" && p.tide > 0, "만조 탈출 시 사용하세요.");
       p.tide = 0;
+      log(g, `${p.name} · 만조 탈출권 사용`);
     } else {
       requireRule(
         g.phase === "toll" && !!g.payment?.to,
@@ -554,7 +630,10 @@ function performAction(
       g.pendingSteps = g.dice[0] + g.dice[1];
       g.phase = "animation";
       g.animationUntil = now + 2400;
-      log(g, `${p.name} · 주사위 ${g.dice.join(" + ")}`);
+      log(
+        g,
+        `${p.name} · 주사위 ${g.dice.join(" + ")} = ${g.pendingSteps}칸${double ? " · 더블! 추가 주사위" : ""}`,
+      );
       break;
     }
     case "buy": {
@@ -566,7 +645,7 @@ function performAction(
       );
       p.cash -= t.price!;
       g.estates[t.id] = { owner: p.id, buildings: t.costs!.map(() => false) };
-      log(g, `${p.name} · ${t.name} 구매`);
+      log(g, `${p.name} · ${t.name} 구매 (${t.price!.toLocaleString()})`);
       stop(g);
       break;
     }
@@ -579,18 +658,30 @@ function performAction(
         e?.owner === p.id && i !== undefined && i >= 0 && p.laps >= i + 1,
         "건설 해금 조건을 확인하세요.",
       );
+      requireRule(
+        a.building === undefined || a.building === i,
+        "관측소 → 연구소 → 종합연구센터 순서로 건설하세요.",
+      );
       const cost = t.costs![i];
       requireRule(p.cash >= cost, "건설할 연구비가 부족합니다.");
       p.cash -= cost;
       e.buildings[i] = true;
-      log(g, `${p.name} · ${t.name} ${BUILDINGS[i]} 건설`);
-      stop(g);
+      log(
+        g,
+        `${p.name} · ${t.name} ${BUILDINGS[i]} 건설 (${cost.toLocaleString()})`,
+      );
+      const nextStage = e.buildings.findIndex((b) => !b);
+      if (nextStage < 0 || p.laps < nextStage + 1) stop(g);
       break;
     }
     case "skip":
       requireRule(
         ["purchase", "build", "low"].includes(g.phase),
         "포기할 수 없는 상태입니다.",
+      );
+      log(
+        g,
+        `${p.name} · ${BOARD[p.position].name} ${g.phase === "purchase" ? "구매 포기" : g.phase === "build" ? "건설 마침" : "간조 이용 포기"}`,
       );
       if (g.phase === "low") {
         p.low = false;
@@ -655,19 +746,41 @@ export function tick(g: Game, now: number, rng: Random) {
     if (g.escapeRoll) {
       if (g.dice[0] === g.dice[1]) {
         p.tide = 0;
-        move(g, g.pendingSteps, true);
-        land(g, now, rng);
+        beginMove(g, g.pendingSteps, true, now, "주사위 이동");
       } else {
         p.tide--;
-        log(g, `만조 탈출 실패 · 남은 시도 ${p.tide}회`);
+        log(g, `${p.name} · 만조 탈출 실패 · 남은 시도 ${p.tide}회`);
         stop(g);
       }
     } else if (g.doubles === 3) {
-      high(g, p);
+      beginMove(
+        g,
+        (10 - p.position + 40) % 40,
+        false,
+        now,
+        "더블 3회 · 만조 이동",
+        "high",
+      );
     } else {
-      move(g, g.pendingSteps, true);
-      land(g, now, rng);
+      beginMove(g, g.pendingSteps, true, now, "주사위 이동");
     }
+    return true;
+  }
+  if (g.phase === "moving") {
+    if (now < g.animationUntil) return false;
+    const m = g.motion!;
+    if (m.remaining > 0) {
+      move(g, m.direction, m.reward);
+      m.remaining--;
+      m.done++;
+      g.animationUntil = now + 240;
+    }
+    if (!m.remaining) finishMotion(g, now, rng);
+    return true;
+  }
+  if (g.phase === "reveal") {
+    if (now < g.animationUntil) return false;
+    resolveCard(g, now, rng);
     return true;
   }
   if (canAutoPay(g)) {
@@ -720,7 +833,7 @@ export function view(g: Game, id: string) {
       held: p.id === id ? p.held : [],
       cardCount: p.held.length,
     })),
-    lastCard: g.lastCard === 24 || g.lastCard === 25 ? undefined : g.lastCard,
+    lastCard: g.lastCard,
   };
 }
 export type GameView = ReturnType<typeof view>;
