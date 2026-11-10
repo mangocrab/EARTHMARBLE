@@ -3239,3 +3239,13 @@ small {
 .overview .facilities > span {
   min-width: 3px;
 }
+.result-overlay {
+  z-index: 120;
+  padding: 12px;
+}
+.result-actions {
+  grid-template-columns: 1fr;
+}
+.result-actions button {
+  min-height: 44px;
+}

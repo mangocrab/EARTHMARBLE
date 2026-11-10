@@ -180,6 +180,7 @@ function App() {
       !panel &&
       selected === null &&
       state.room?.game?.phase !== "reveal" &&
+      state.room?.game?.phase !== "finished" &&
       !paymentOpen
     )
       return;
@@ -571,8 +572,12 @@ function App() {
         .querySelector(".board-section")
         ?.scrollIntoView({ block: "start" });
   }, [room?.id, !!g, compact]);
-  useEffect(() => {
-    if (g?.phase === "finished" && compact) setOverview(true);
+  useLayoutEffect(() => {
+    if (g?.phase !== "finished") return;
+    setSelected(null);
+    setPanel("");
+    setPaymentOpen(false);
+    if (compact) setOverview(true);
   }, [g?.phase, compact]);
   const controls =
     g && p ? (
@@ -1258,22 +1263,7 @@ function App() {
                     {g.phase === "finished" ? (
                       <div className="winner">
                         <h3>탐사 완료!</h3>
-                        <p>
-                          {g.winner
-                            ?.map(
-                              (id) => g.players.find((q) => q.id === id)?.name,
-                            )
-                            .join(", ")}{" "}
-                          승리
-                        </p>
-                        {g.players.map((q) => (
-                          <p key={q.id}>
-                            {q.name} · {money(total(q))}
-                          </p>
-                        ))}
-                        <button onClick={() => command({ type: "leave" })}>
-                          로비로 돌아가기
-                        </button>
+                        <p>최종 결과를 확인하세요.</p>
                       </div>
                     ) : (
                       <>
@@ -1446,6 +1436,44 @@ function App() {
         <span>지구를 이해하는 가장 즐거운 한 바퀴.</span>
         <span>지권 · 수권 · 기권 · 우주</span>
       </footer>
+      {g?.phase === "finished" && (
+        <div className="modal-overlay result-overlay">
+          <section
+            className="payment-dialog result-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="탐사 결과"
+          >
+            <header className="payment-heading">
+              <h2>탐사 완료!</h2>
+            </header>
+            <div className="payment-summary">
+              <strong>
+                {g.winner
+                  ?.map((id) => g.players.find((q) => q.id === id)?.name)
+                  .join(", ")}{" "}
+                승리
+              </strong>
+            </div>
+            <div className="payment-details">
+              {g.players.map((q) => (
+                <p key={q.id}>
+                  {q.name} · 최종 자산 {money(total(q))}원
+                </p>
+              ))}
+            </div>
+            <div className="payment-actions result-actions">
+              <button
+                className="primary"
+                disabled={busy || !connected}
+                onClick={() => command({ type: "leave" })}
+              >
+                로비로 돌아가기
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {paymentDecision &&
         paymentOpen &&
         !panel &&
@@ -1537,7 +1565,7 @@ function App() {
             </section>
           </div>
         )}
-      {panel && (
+      {panel && g?.phase !== "finished" && (
         <div className="modal-overlay" onClick={() => setPanel("")}>
           <section
             className="modal"
@@ -1993,7 +2021,7 @@ function App() {
           </section>
         </div>
       )}
-      {selected !== null && (
+      {selected !== null && g?.phase !== "finished" && (
         <div
           className={`modal-overlay ${decision && selected === p?.position ? "arrival-overlay" : ""}`}
           role={decision && selected === p?.position ? "dialog" : undefined}

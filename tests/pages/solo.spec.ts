@@ -574,3 +574,33 @@ test("매각한 건물은 서서히, 땅의 소유 삼각형은 한 번 빛난 �
     page.locator('[data-tile="1"] .sale-building-ghost'),
   ).toHaveCount(0);
 });
+
+for (const panel of ["property", "cards"]) {
+  test(`종료 시 열린 ${panel} 카드를 닫고 가려지지 않은 버튼으로 로비에 돌아간다`, async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date() });
+    await page.setViewportSize({ width: 320, height: 568 });
+    await start(page, "3");
+    if (panel === "property") {
+      await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
+      await page.getByRole("button", { name: "카드 돌리기" }).click();
+    } else await page.getByRole("button", { name: "보유 카드" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.clock.fastForward(31 * 60 * 1000);
+    const result = page.getByRole("dialog", { name: "탐사 결과" });
+    await expect(result).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(page.locator(".deed")).toHaveCount(0);
+    const lobby = result.getByRole("button", {
+      name: "로비로 돌아가기",
+      exact: true,
+    });
+    await expect(lobby).toBeInViewport();
+    await lobby.click();
+    await expect(
+      page.getByRole("button", { name: "AI와 탐사 시작" }),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+}

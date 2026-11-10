@@ -235,11 +235,12 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     }).click();
     await B.getByRole("button", { name: "카드 돌리기" }).click();
     await A.getByRole("button", { name: "파산 선언" }).click();
+    await expect(B.getByRole("dialog", { name: "탐사 결과" })).toBeVisible();
     await expect(
-      B.locator(".deed-back").getByText("은행", { exact: true }),
+      B.getByRole("button", { name: "로비로 돌아가기" }),
     ).toBeVisible();
-    await expect(B.locator(".deed-heading .owner-triangle")).toHaveCount(0);
     await until(() => state.room.game.phase === "finished");
+    expect(state.room.game.estates[5]).toBeUndefined();
     expect(state.room.game.players[0].cardCount).toBe(0);
     expect(state.room.game.drawCount + state.room.game.discardCount).toBe(30);
     expect(state.room.game.winner).toEqual([pb.id]);
