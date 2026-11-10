@@ -24,7 +24,7 @@ https://mangocrab.github.io/EARTHMARBLE/
 - **방 참가하기**에서 코드·비밀번호를 입력합니다. 방장은 게임이 끝날 때까지 창을 열어 두어야 합니다.
 - **AI 초대방**은 네트워크 접속 없이 만들 수 있습니다. 온라인 방에도 AI만 초대했다면 시작할 때 로컬 싱글플레이로 전환하며 자동 저장합니다.
 
-별도 게임 서버 주소 없이 PeerJS 공개 신호 서버(`0.peerjs.com`)와 공개 STUN/TURN 서비스를 사용합니다. 게임 상태·행동은 암호화된 WebRTC 데이터 채널로 주고받으며, 방장 브라우저가 규칙·주사위·AI를 처리합니다. 방장 연결이 끊기면 같은 게임을 계속할 수 없으므로 방장 창을 유지하세요. 싱글플레이 자동 저장은 로컬 AI 방에 적용합니다.
+별도 게임 서버 주소 없이 PeerJS 공개 신호 서버(`0.peerjs.com`)와 Google·Cloudflare의 공개 STUN 서비스를 사용합니다. 게임 상태·행동은 암호화된 WebRTC 데이터 채널로 주고받으며, 방장 브라우저가 규칙·주사위·AI를 처리합니다. 방장 연결이 끊기면 같은 게임을 계속할 수 없으므로 방장 창을 유지하세요. 직접 WebRTC 연결을 막는 네트워크나 일부 NAT 조합에서는 접속할 수 없습니다. 운영용 TURN 중계는 포함하지 않으며, 테스트에서는 로컬 TURN을 사용합니다. 싱글플레이 자동 저장은 로컬 AI 방에 적용합니다.
 
 기존 Node 서버를 별도로 운영한다면 `설정 → 전용 게임 서버 주소 (선택)`을 지정하여 그 서버의 매칭·방 기능을 이용할 수도 있습니다. 서버 주소를 지정하지 않으면 WebRTC를 사용합니다.
 
@@ -32,7 +32,7 @@ https://mangocrab.github.io/EARTHMARBLE/
 
 ### 온라인 연결 테스트
 
-`npm run test:peer`는 실제 두 Chromium 브라우저를 로컬 PeerJS 신호 서버와 TCP TURN 중계로 연결합니다. `coturn`의 `turnserver`가 필요하며 `TURN_SERVER_BIN`으로 실행 파일을 지정할 수 있습니다. `VITE_SIGNAL_URL` / `VITE_TURN_URL`은 테스트용 신호·중계 경로를 주입하며, 배포 빌드는 공개 서비스의 기본 경로를 사용합니다. 브라우저의 UDP 보호 정책은 변경하지 않습니다.
+`npm run test:peer`는 실제 두 Chromium 브라우저를 로컬 PeerJS 신호 서버와 TCP TURN 중계로 연결합니다. `coturn`의 `turnserver`가 필요하며 `TURN_SERVER_BIN`으로 실행 파일을 지정할 수 있습니다. `VITE_SIGNAL_URL` / `VITE_TURN_URL`은 테스트용 신호·중계 경로를 주입하며, 배포 빌드는 공개 신호 서버와 STUN을 사용합니다. 브라우저의 UDP 보호 정책은 변경하지 않습니다.
 
 ## 모바일 전체 게임판
 

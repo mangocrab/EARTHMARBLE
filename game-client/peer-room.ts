@@ -1,4 +1,4 @@
-import Peer, { util, type DataConnection, type PeerOptions } from "peerjs";
+import Peer, { type DataConnection, type PeerOptions } from "peerjs";
 import {
   createGame,
   apply,
@@ -18,16 +18,15 @@ type HostedRoom = Omit<Room, "game"> & { game?: Game };
 const FINDER = "earthmarble-match-lobby-v1";
 const levels = ["easy", "normal", "hard"];
 function options(): PeerOptions {
-  const config: RTCConfiguration = structuredClone(util.defaultConfig);
-  for (const server of config.iceServers ?? []) {
-    const urls = typeof server.urls === "string" ? [server.urls] : server.urls;
-    server.urls = [
-      ...urls,
-      ...urls
-        .filter((u) => u.startsWith("turn:") && !u.includes("?"))
-        .map((u) => `${u}?transport=tcp`),
-    ];
-  }
+  // PeerJS 1.5 ships retired TURN hostnames. Use reachable public STUN for
+  // direct connections; a relay can be injected for controlled deployments/tests.
+  const config: RTCConfiguration = {
+    iceServers: [
+      {
+        urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"],
+      },
+    ],
+  };
   if (import.meta.env.VITE_TURN_URL)
     config.iceServers = [
       {
