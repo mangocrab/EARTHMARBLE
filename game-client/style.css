@@ -3042,3 +3042,200 @@ small {
 .card-reveal-overlay {
   perspective: 1200px;
 }
+/* Payment choices stay outside the scrollable details on every viewport. */
+.payment-overlay {
+  padding: 12px;
+}
+.payment-dialog {
+  width: min(430px, 100%);
+  max-height: calc(100dvh - 24px);
+  background: #fcfaf0;
+  border: 1px solid #c4cfb9;
+  border-radius: 12px;
+  box-shadow: 0 25px 80px #112b2940;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.payment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #d9dfcd;
+  flex-shrink: 0;
+}
+.payment-heading h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.payment-heading button {
+  padding: 4px 10px;
+  font-size: 22px;
+}
+.payment-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 16px;
+  background: #edf0df;
+  flex-shrink: 0;
+}
+.payment-summary strong {
+  font-size: 28px;
+}
+.payment-summary small,
+.payment-summary span {
+  font-size: 12px;
+}
+.payment-details {
+  padding: 10px 16px;
+  overflow: auto;
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.payment-details p {
+  margin: 4px 0;
+}
+.payment-actions {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #d9dfcd;
+  background: #fcfaf0;
+}
+.payment-actions button {
+  min-height: 40px;
+  padding: 8px;
+  font-size: 12px;
+  white-space: normal;
+}
+.payment-actions button:first-child {
+  background: #24664d;
+  color: #fff;
+}
+.payment-actions button:disabled {
+  opacity: 1;
+  background: #e4e7de;
+  color: #687265;
+}
+@media (max-height: 450px) {
+  .payment-heading {
+    padding: 6px 12px;
+  }
+  .payment-summary {
+    padding: 8px 12px;
+    gap: 2px;
+  }
+  .payment-summary strong {
+    font-size: 23px;
+  }
+  .payment-actions {
+    padding: 8px;
+    gap: 6px;
+  }
+  .payment-actions button {
+    min-height: 34px;
+  }
+  .payment-details {
+    padding: 5px 12px;
+  }
+}
+/* A sold symbol remains only as a visual ghost; ownership changes immediately. */
+.sale-owner-ghost {
+  pointer-events: none;
+  z-index: 4;
+  animation: sold-owner 1.45s ease-out forwards;
+}
+.sale-building-ghost {
+  display: inline-block;
+  pointer-events: none;
+  animation: sold-building 1.4s ease-out forwards;
+}
+@keyframes sold-owner {
+  0% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  12% {
+    opacity: 1;
+    filter: brightness(3);
+  }
+  24% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sold-building {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.drawn-card {
+  width: var(--reveal-width, min(390px, 90vw));
+  height: var(--reveal-height, 520px);
+}
+.draw-card-front {
+  height: 100%;
+  max-height: 100%;
+}
+.draw-source-deck {
+  transform: translate(-50%, -50%);
+  box-shadow:
+    3px -3px 0 #c8d1ba,
+    5px -5px 0 #dbe1d0;
+}
+@keyframes deck-card-draw {
+  0%,
+  12% {
+    transform: translate(var(--draw-x, 0px), var(--draw-y, 100px))
+      scale(var(--draw-scale, 0.1)) rotateY(180deg);
+  }
+  35% {
+    transform: translate(
+        calc(var(--draw-x, 0px) - 55px),
+        calc(var(--draw-y, 100px) - 55px)
+      )
+      scale(var(--draw-scale, 0.1)) rotateZ(5deg) rotateY(180deg);
+  }
+  62% {
+    transform: translate(0px, -20px) scale(0.9) rotateY(180deg);
+  }
+  80% {
+    transform: translate(0px, -10px) scale(1.03) rotateY(90deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sale-owner-ghost,
+  .sale-building-ghost {
+    animation: none;
+    opacity: 0;
+  }
+}
+.overview .facilities {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 6px;
+  line-height: 1;
+  right: 1px;
+  bottom: 1px;
+  z-index: 3;
+  pointer-events: none;
+}
+.overview .facilities > span {
+  min-width: 3px;
+}

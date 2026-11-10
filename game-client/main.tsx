@@ -89,6 +89,7 @@ function App() {
     () => matchMedia("(max-width:1190px)").matches,
   );
   const [overview, setOverview] = useState(true);
+  const [paymentOpen, setPaymentOpen] = useState(true);
   const [soloCount, setSoloCount] = useState(1);
   const [soloLevels, setSoloLevels] = useState(["normal", "normal", "normal"]);
   const [mapStage, setMapStage] = useState<HTMLDivElement | null>(null);
@@ -175,13 +176,19 @@ function App() {
     };
   }, [me?.id]);
   useEffect(() => {
-    if (!panel && selected === null && state.room?.game?.phase !== "reveal")
+    if (
+      !panel &&
+      selected === null &&
+      state.room?.game?.phase !== "reveal" &&
+      !paymentOpen
+    )
       return;
     const before = document.activeElement as HTMLElement;
     const modal =
       document.querySelector<HTMLElement>(
         '.card-reveal-overlay [role="dialog"]',
       ) ?? document.querySelector<HTMLElement>('[role="dialog"]');
+    if (!modal) return;
     const first = () =>
       modal?.querySelector<HTMLElement>("button:not([disabled]),input,select");
     (first() ?? modal)?.focus();
@@ -189,6 +196,7 @@ function App() {
       if (e.key === "Escape") {
         setPanel("");
         setSelected(null);
+        setPaymentOpen(false);
       }
       if (e.key === "Tab" && modal) {
         const nodes = [
@@ -215,7 +223,7 @@ function App() {
       document.removeEventListener("keydown", key);
       before?.focus();
     };
-  }, [panel, selected, back, state.room?.game?.phase === "reveal"]);
+  }, [panel, selected, back, state.room?.game?.phase, paymentOpen]);
   const room = state.room,
     g = room?.game,
     p = g?.players.find((p) => p.id === me?.id),
@@ -231,14 +239,84 @@ function App() {
     const source = deck && deck.width > 0 ? deck : board;
     const x = source ? source.left + source.width * 0.5 : innerWidth * 0.5;
     const y = source ? source.top + source.height * 0.5 : innerHeight * 0.65;
+    const deckWidth = deck?.width || 32,
+      deckHeight = deck?.height || 43;
+    const aspect = deckWidth / deckHeight;
+    const revealWidth = Math.min(
+      390,
+      innerWidth * 0.9,
+      (innerHeight - 50) * aspect,
+    );
     setDrawOrigin({
       "--draw-x": `${x - innerWidth / 2}px`,
       "--draw-y": `${y - innerHeight / 2}px`,
-      "--draw-scale": `${(deck?.width || 32) / Math.min(390, innerWidth * 0.9)}`,
-      "--deck-width": `${deck?.width || 32}px`,
-      "--deck-height": `${deck?.height || 43}px`,
+      "--draw-scale": `${deckWidth / revealWidth}`,
+      "--deck-width": `${deckWidth}px`,
+      "--reveal-width": `${revealWidth}px`,
+      "--reveal-height": `${revealWidth / aspect}px`,
+      "--deck-height": `${deckHeight}px`,
     } as React.CSSProperties);
   }, [g?.phase, g?.deckVersion]);
+  const paymentDecision = !!(
+    myTurn &&
+    g?.payment &&
+    ["toll", "debt"].includes(g.phase)
+  );
+  useEffect(() => {
+    if (paymentDecision) setPaymentOpen(true);
+  }, [paymentDecision, g?.payment?.amount, g?.payment?.to, p?.position]);
+  type SaleGhost = {
+    key: string;
+    tile: number;
+    owner: string;
+    building?: number;
+  };
+  const [saleGhosts, setSaleGhosts] = useState<SaleGhost[]>([]);
+  const previousEstates = useRef<{
+    room: string;
+    estates: NonNullable<typeof g>["estates"];
+  } | null>(null);
+  useEffect(() => {
+    if (!g || !room) {
+      previousEstates.current = null;
+      return;
+    }
+    const prev = previousEstates.current;
+    previousEstates.current = {
+      room: room.id,
+      estates: structuredClone(g.estates),
+    };
+    if (!prev || prev.room !== room.id) {
+      setSaleGhosts([]);
+      return;
+    }
+    const removed: SaleGhost[] = [];
+    for (const [id, old] of Object.entries(prev.estates)) {
+      const next = g.estates[+id],
+        transferred = next?.owner !== old.owner;
+      if (transferred)
+        removed.push({
+          key: `${id}-owner-${performance.now()}`,
+          tile: +id,
+          owner: old.owner,
+        });
+      old.buildings.forEach((built, i) => {
+        if (built && (transferred || !next?.buildings[i]))
+          removed.push({
+            key: `${id}-${i}-${performance.now()}`,
+            tile: +id,
+            owner: old.owner,
+            building: i,
+          });
+      });
+    }
+    if (removed.length) setSaleGhosts((old) => [...old, ...removed]);
+  }, [g, room?.id]);
+  useEffect(() => {
+    if (!saleGhosts.length) return;
+    const timer = setTimeout(() => setSaleGhosts([]), 1600);
+    return () => clearTimeout(timer);
+  }, [saleGhosts]);
   const decision = !!(myTurn && g && ["purchase", "build"].includes(g.phase));
   const lastDecision = useRef(false);
   const previousCash = useRef<Record<string, number>>({});
@@ -516,41 +594,10 @@ function App() {
                 도착한 땅 · 구매 / 건설 선택
               </button>
             )}
-            {(g.phase === "toll" || g.phase === "debt") && (
-              <>
-                <span>정산할 연구비</span>
-                <h3>{money(g.payment?.amount || 0)}</h3>
-                {g.settlement && (
-                  <div className="breakdown">
-                    {g.settlement.parts.map((n, i) =>
-                      n > 0 ? (
-                        <small key={i}>
-                          {["기본 토지료", ...BUILDINGS][i]} {money(n)}{" "}
-                        </small>
-                      ) : null,
-                    )}
-                  </div>
-                )}
-                {btn(
-                  "연구비 정산",
-                  { type: "pay" },
-                  p!.cash < (g.payment?.amount || 0),
-                )}
-                {p!.cash < (g.payment?.amount || 0) && (
-                  <>
-                    {btn(
-                      "부족분 자동 매각",
-                      { type: "auto-sell" },
-                      !Object.values(g.estates).some((e) => e.owner === p.id),
-                    )}
-                    <small>
-                      건물을 비싼 순서로 먼저 매각하고, 부족하면 싼 땅부터
-                      매각합니다.
-                    </small>
-                    {btn("파산 선언", { type: "bankrupt" })}
-                  </>
-                )}
-              </>
+            {paymentDecision && (
+              <button onClick={() => setPaymentOpen(true)}>
+                정산 화면 열기 · {money(g.payment!.amount)}
+              </button>
             )}
             {g.phase === "low" && (
               <>
@@ -1065,6 +1112,23 @@ function App() {
                             style={{ background: colors[owner] }}
                           />
                         )}
+                        {saleGhosts
+                          .filter(
+                            (v) => v.tile === t.id && v.building === undefined,
+                          )
+                          .map((v) => (
+                            <span
+                              key={v.key}
+                              className="owner-triangle sale-owner-ghost"
+                              aria-hidden="true"
+                              style={{
+                                background:
+                                  colors[
+                                    g.players.findIndex((q) => q.id === v.owner)
+                                  ],
+                              }}
+                            />
+                          ))}
                         <span className="tile-symbol">
                           {t.kind === "card"
                             ? "✦"
@@ -1135,13 +1199,27 @@ function App() {
                               : ""}
                         </span>
                         <div className="facilities">
-                          {e?.buildings.map((b, i) =>
-                            b ? (
-                              <span key={i} title={BUILDINGS[i]}>
-                                {["⌂", "▣", "♜"][i]}
-                              </span>
-                            ) : null,
-                          )}
+                          {BUILDINGS.map((name, i) => (
+                            <React.Fragment key={name}>
+                              {e?.buildings[i] ? (
+                                <span title={name}>{["⌂", "▣", "♜"][i]}</span>
+                              ) : (
+                                saleGhosts
+                                  .filter(
+                                    (v) => v.tile === t.id && v.building === i,
+                                  )
+                                  .map((v) => (
+                                    <span
+                                      key={v.key}
+                                      className="sale-building-ghost"
+                                      aria-hidden="true"
+                                    >
+                                      {["⌂", "▣", "♜"][i]}
+                                    </span>
+                                  ))
+                              )}
+                            </React.Fragment>
+                          ))}
                         </div>
                         <div className="tokens">
                           {g.players.map((q, i) =>
@@ -1368,6 +1446,97 @@ function App() {
         <span>지구를 이해하는 가장 즐거운 한 바퀴.</span>
         <span>지권 · 수권 · 기권 · 우주</span>
       </footer>
+      {paymentDecision &&
+        paymentOpen &&
+        !panel &&
+        selected === null &&
+        g &&
+        p && (
+          <div className="modal-overlay payment-overlay">
+            <section
+              className="payment-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="연구비 정산"
+            >
+              <header className="payment-heading">
+                <h2>연구비 정산</h2>
+                <button
+                  aria-label="정산 화면 닫기"
+                  onClick={() => setPaymentOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <div className="payment-summary">
+                <small>
+                  {g.settlement
+                    ? BOARD[g.settlement.tile].name
+                    : "이동·카드 비용"}{" "}
+                  ·{" "}
+                  {g.payment!.to
+                    ? g.players.find((q) => q.id === g.payment!.to)?.name
+                    : g.payment!.fund
+                      ? "자연보호기금"
+                      : "은행"}
+                  에게 지급
+                </small>
+                <strong>{money(g.payment!.amount)}원</strong>
+                <span>
+                  보유 {money(p.cash)}원 · 부족{" "}
+                  {money(Math.max(0, g.payment!.amount - p.cash))}원
+                </span>
+              </div>
+              <div className="payment-details">
+                {g.settlement && (
+                  <details>
+                    <summary>통행료 계산 보기</summary>
+                    {g.settlement.parts.map((n, i) =>
+                      n > 0 ? (
+                        <p key={i}>
+                          {["토지", ...BUILDINGS][i]} {money(n)}원
+                        </p>
+                      ) : null,
+                    )}
+                  </details>
+                )}
+                {p.cash < g.payment!.amount && (
+                  <p>
+                    자동 매각은 비싼 건물부터, 이후 싼 땅부터 필요한 만큼
+                    판매합니다.
+                  </p>
+                )}
+                <small>남은 행동 시간 {remaining}초</small>
+              </div>
+              <div className="payment-actions">
+                {btn(
+                  "연구비 정산",
+                  { type: "pay" },
+                  p.cash < g.payment!.amount,
+                )}
+                {g.phase === "toll" &&
+                  p.held.includes(25) &&
+                  btn("통행료 면제권 사용", { type: "use", card: 25 })}
+                {p.cash < g.payment!.amount && (
+                  <>
+                    {btn(
+                      "부족분 자동 매각",
+                      { type: "auto-sell" },
+                      !Object.values(g.estates).some((e) => e.owner === p.id),
+                    )}
+                    <button
+                      disabled={busy || !!state.paused}
+                      onClick={() => setPanel("properties")}
+                    >
+                      직접 매각할 소유지 선택
+                    </button>
+                    {btn("파산 선언", { type: "bankrupt" })}
+                  </>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       {panel && (
         <div className="modal-overlay" onClick={() => setPanel("")}>
           <section

@@ -381,7 +381,7 @@ function beginMove(
   g.motion = {
     remaining: Math.abs(steps),
     direction: steps < 0 ? -1 : 1,
-    reward,
+    reward: reward && finish !== "high",
     total: Math.abs(steps),
     done: 0,
     label,
@@ -833,7 +833,7 @@ export function tick(g: Game, now: number, rng: Random) {
         (10 - p.position + 40) % 40,
         false,
         now,
-        "더블 3회 · 만조 이동",
+        "더블 3회 · 만조 이동 (출발지 보상 없음)",
         "high",
       );
     } else {
@@ -845,7 +845,7 @@ export function tick(g: Game, now: number, rng: Random) {
     if (now + 0.0001 < g.animationUntil) return false;
     const m = g.motion!;
     while (m.remaining > 0 && now + 0.0001 >= g.animationUntil) {
-      move(g, m.direction, m.reward);
+      move(g, m.direction, m.reward && m.finish !== "high");
       m.remaining--;
       m.done++;
       g.animationUntil += movementInterval(m.total);

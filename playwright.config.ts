@@ -22,9 +22,15 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "npm run start",
+      command:
+        "node --import ./tests/fixtures/controlled-clock.mjs --import tsx game-server/index.ts",
       url: "http://127.0.0.1:3198/api/health",
-      env: { PORT: "3198", DATA_DIR: ".data/e2e" },
+      env: {
+        NODE_ENV: "production",
+        PORT: "3198",
+        DATA_DIR: ".data/e2e",
+        EARTH_TEST_FIXED_DICE: "true",
+      },
       reuseExistingServer: false,
     },
     {

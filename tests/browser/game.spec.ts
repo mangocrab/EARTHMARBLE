@@ -100,6 +100,8 @@ test("PC: 두 탐사대원, 비밀번호 방, 서버 주사위, 상세 카드, �
   await expect(
     A.getByRole("img", { name: "공용 탐사 카드 덱 뒷면" }),
   ).toBeVisible();
+  await expect(A.locator(".arrival-overlay")).toBeVisible({ timeout: 10000 });
+  await A.getByRole("button", { name: "상세 카드 닫기" }).click();
   await A.getByRole("button", { name: "1번 지진", exact: true }).click();
   await expect(A.getByRole("dialog")).toContainText("지각에 쌓인 응력");
   await A.getByRole("button", { name: "카드 돌리기" }).click();
@@ -157,6 +159,10 @@ test("모바일: AI 초대, 준비 및 플레이, 소유지 카드 터치 전환
     .toBe(true);
 
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
+  await expect(page.locator(".arrival-overlay")).toBeVisible({
+    timeout: 10000,
+  });
+  await page.getByRole("button", { name: "상세 카드 닫기" }).click();
   await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
   await page.getByRole("button", { name: "카드 돌리기" }).click();
   await expect(page.locator(".deed")).toHaveClass(/flipped/);

@@ -165,7 +165,7 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
   await expect(
     page.getByRole("button", { name: "땅 구매", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 10000 });
   await page.getByRole("button", { name: "땅 구매", exact: true }).click();
   await expect
     .poll(() =>
@@ -378,6 +378,7 @@ test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 �
     g.estates[1] = { owner: p.id, buildings: [true, true, true] };
     g.estates[39] = { owner: g.players[1].id, buildings: [] };
   });
+  await page.getByRole("button", { name: "정산 화면 닫기" }).click();
   await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
   await page.getByRole("button", { name: "카드 돌리기" }).click();
   await expect(
@@ -390,6 +391,7 @@ test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 �
     page.getByRole("button", { name: "종합연구센터 매각" }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "상세 카드 닫기" }).click();
+  await page.getByRole("button", { name: "정산 화면 열기" }).click();
   await page.getByRole("button", { name: "부족분 자동 매각" }).click();
   await expect
     .poll(() =>
@@ -432,6 +434,17 @@ test("더블로 전 지구 탐사 카드를 뽑으면 한 바퀴 후 재추첨�
   await expect(
     page.getByRole("dialog", { name: "공개 탐사 카드" }),
   ).toContainText("전 지구 탐사");
+  await page.locator(".drawn-card").evaluate((el) => {
+    const a = el.getAnimations()[0];
+    a.pause();
+    a.currentTime = 0;
+  });
+  const drawn = await page.locator(".drawn-card").boundingBox();
+  expect(Math.abs(drawn!.width - deck!.width)).toBeLessThan(1);
+  expect(Math.abs(drawn!.height - deck!.height)).toBeLessThan(1);
+  await page
+    .locator(".drawn-card")
+    .evaluate((el) => el.getAnimations()[0].play());
   const source = await page.locator(".draw-source-deck").boundingBox();
   expect(
     Math.abs(source!.x + source!.width / 2 - (deck!.x + deck!.width / 2)),
@@ -452,4 +465,112 @@ test("더블로 전 지구 탐사 카드를 뽑으면 한 바퀴 후 재추첨�
   expect(g.players[0].cash).toBe(1700000);
   expect(g.players[0].held).toEqual([24]);
   expect(g.players[1].held).toEqual([]);
+});
+
+for (const [width, height] of [
+  [320, 568],
+  [390, 844],
+  [667, 375],
+]) {
+  test(`${width}×${height}: 큰 통행료의 모든 정산 버튼을 스크롤 없이 볼 수 있다`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await start(page);
+    await seed(page, (save) => {
+      const g = save.room.game,
+        p = g.players[0];
+      p.position = 37;
+      p.cash = 10000;
+      p.held = [25];
+      g.drawPile = g.drawPile.filter((id: number) => id !== 25);
+      g.phase = "toll";
+      g.payment = { amount: 2805000, to: g.players[1].id, toll: true };
+      g.settlement = {
+        tile: 37,
+        parts: [35000, 170000, 1100000, 1500000],
+        amount: 2805000,
+      };
+      g.estates[37] = { owner: g.players[1].id, buildings: [true, true, true] };
+      g.estates[1] = { owner: p.id, buildings: [true, true, true] };
+    });
+    const dialog = page.getByRole("dialog", { name: "연구비 정산" });
+    await expect(dialog).toBeVisible();
+    for (const name of [
+      "연구비 정산",
+      "통행료 면제권 사용",
+      "부족분 자동 매각",
+      "직접 매각할 소유지 선택",
+      "파산 선언",
+    ])
+      await expect(
+        dialog.getByRole("button", { name, exact: true }),
+      ).toBeVisible();
+    const allFit = await dialog
+      .locator(".payment-actions button")
+      .evaluateAll((buttons) =>
+        buttons.every((button) => {
+          const r = button.getBoundingClientRect();
+          return (
+            r.top >= 0 &&
+            r.bottom <= innerHeight &&
+            r.left >= 0 &&
+            r.right <= innerWidth
+          );
+        }),
+      );
+    expect(allFit).toBe(true);
+    await dialog.getByText("통행료 계산 보기").click();
+    await dialog
+      .locator(".payment-details")
+      .evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(
+      dialog.getByRole("button", { name: "파산 선언", exact: true }),
+    ).toBeInViewport();
+    await page.screenshot({
+      path: `test-results-pages/payment-${width}x${height}.png`,
+    });
+    await dialog
+      .getByRole("button", { name: "통행료 면제권 사용", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const cash = await page.evaluate(
+      (key) => JSON.parse(localStorage.getItem(key)!).room.game.players[0].cash,
+      KEY,
+    );
+    expect(cash).toBe(10000);
+  });
+}
+
+test("매각한 건물은 서서히, 땅의 소유 삼각형은 한 번 빛난 뒤 사라진다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.estates[1] = { owner: g.players[0].id, buildings: [true, true, true] };
+  });
+  await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
+  await page.getByRole("button", { name: "카드 돌리기" }).click();
+  await page.getByRole("button", { name: "종합연구센터 매각" }).click();
+  const building = page.locator('[data-tile="1"] .sale-building-ghost');
+  await expect(building).toHaveCount(1);
+  await expect
+    .poll(() => building.evaluate((el) => +getComputedStyle(el).opacity))
+    .toBeLessThan(0.8);
+  await page.getByRole("button", { name: "연구소 매각" }).click();
+  await page.getByRole("button", { name: "관측소 매각" }).click();
+  await page.getByRole("button", { name: "토지 매각" }).click();
+  await page.getByRole("button", { name: "상세 카드 닫기" }).click();
+  const owner = page.locator('[data-tile="1"] .sale-owner-ghost');
+  await expect(owner).toHaveCount(1);
+  await expect(
+    page.locator('[data-tile="1"] .owner-triangle:not(.sale-owner-ghost)'),
+  ).toHaveCount(0);
+  await page.screenshot({ path: "test-results-pages/sold-property-fade.png" });
+  await expect(owner).toHaveCount(0, { timeout: 3000 });
+  await expect(
+    page.locator('[data-tile="1"] .sale-building-ghost'),
+  ).toHaveCount(0);
 });

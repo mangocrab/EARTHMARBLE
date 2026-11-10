@@ -237,3 +237,21 @@ describe("추가 요청 규칙", () => {
     expect(g.estates[39].owner).toBe("b");
   });
 });
+
+it("세 번째 더블의 만조 강제 이동은 저장 복구 후에도 출발지 보상을 주지 않는다", () => {
+  const g = game();
+  g.doubles = 2;
+  g.players[0].position = 39;
+  apply(g, "a", { type: "roll" }, base, rng);
+  tick(g, g.animationUntil, rng);
+  expect(g.motion?.finish).toBe("high");
+  expect(g.motion?.reward).toBe(false);
+  const restored = structuredClone(g);
+  // Even a legacy snapshot with an incorrect reward flag cannot pay for this move.
+  restored.motion!.reward = true;
+  tick(restored, restored.animationUntil + 1440, rng);
+  expect(restored.players[0].position).toBe(10);
+  expect(restored.players[0].cash).toBe(1500000);
+  expect(restored.players[0].laps).toBe(0);
+  expect(restored.extra).toBe(false);
+});
