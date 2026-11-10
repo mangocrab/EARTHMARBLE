@@ -144,7 +144,9 @@ function App() {
           setConnected(true);
           setLoading(false);
           setIdentityMode("solo");
-          unsubscribe = controller.subscribe((value) => setState(value));
+          unsubscribe = controller.subscribe((value) => {
+            if (!peerRoom.current) setState(value);
+          });
           if (document.hidden) controller.pause();
         })
         .catch(() => {
@@ -551,6 +553,12 @@ function App() {
             data.type === "start" &&
             room?.members.every((m) => m.id === me?.id || !!m.ai)
           ) {
+            if (
+              room.host !== me?.id ||
+              room.members.length < 2 ||
+              !room.members.every((m) => m.ready)
+            )
+              throw new Error("두 명 이상 참가하고 모두 준비해야 합니다.");
             const levels = room.members.filter((m) => m.ai).map((m) => m.ai!);
             peerRoom.current.close();
             peerRoom.current = null;
@@ -565,7 +573,7 @@ function App() {
               type: "create",
               max: room.max,
               minutes: room.minutes,
-              allowAI: true,
+              allowAI: room.allowAI,
             });
             levels.forEach((difficulty) => send({ type: "ai", difficulty }));
             send({ type: "ready", ready: true });
@@ -1007,7 +1015,7 @@ function App() {
           <h1>{room.name}</h1>
           <p>
             {SOLO && !peerRoom.current ? (
-              "AI 초대방 · 시작 시 싱글플레이"
+              "로컬 대기실 · 시작 시 싱글플레이"
             ) : (
               <>
                 방 코드 <strong>{room.code}</strong>
@@ -1016,9 +1024,15 @@ function App() {
             · {room.minutes}분 탐사 · 최대 {room.max}명
           </p>
           {peerRoom.current && (
-            <p className="fine">
-              방장은 게임이 끝날 때까지 이 창을 열어 두세요. AI만 초대해
-              시작하면 싱글플레이로 전환합니다.
+            <p className="fine" role="status">
+              {room.connection === "connecting"
+                ? `친구 초대 연결 준비 중입니다.${room.allowAI ? " AI 초대와 게임 시작은 바로 할 수 있습니다." : ""}`
+                : room.connection === "offline"
+                  ? room.allowAI
+                    ? "친구 초대 연결을 준비하지 못했습니다. AI만 초대해 플레이할 수 있습니다."
+                    : "친구 초대 연결을 준비하지 못했습니다. 나갔다가 다시 방을 만들어 주세요."
+                  : "방 코드를 공유해 친구를 초대하세요. 온라인 방장은 이 창을 열어 두어야 합니다."}
+              {room.allowAI && " AI만 초대해 시작하면 싱글플레이로 전환합니다."}
             </p>
           )}
           <div className="crew-list">
@@ -1050,7 +1064,12 @@ function App() {
             ))}
             {Array.from({ length: room.max - room.members.length }, (_, i) => (
               <article className="empty-seat" key={i}>
-                ＋<p>{SOLO ? "AI를 초대하세요" : "대원을 기다리고 있어요"}</p>
+                ＋
+                <p>
+                  {room.allowAI
+                    ? "대원 참가 또는 AI 초대"
+                    : "대원을 기다리고 있어요"}
+                </p>
               </article>
             ))}
           </div>
@@ -1839,34 +1858,22 @@ function App() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   const f = new FormData(e.currentTarget);
-                  if (SOLO && f.get("kind") === "online" && serverURL.trim()) {
+                  if (SOLO && serverURL.trim()) {
                     openOnline("create");
                     return;
                   }
                   command(
                     {
-                      type:
-                        SOLO && f.get("kind") === "online"
-                          ? "peer-create"
-                          : "create",
+                      type: SOLO ? "peer-create" : "create",
                       max: Number(f.get("max")),
                       minutes: Number(f.get("minutes")),
                       password: f.get("password"),
-                      allowAI: SOLO || f.get("ai") === "on",
+                      allowAI: f.get("ai") === "on",
                     },
                     () => setPanel(""),
                   );
                 }}
               >
-                {SOLO && (
-                  <label>
-                    방 유형
-                    <select name="kind" defaultValue="ai">
-                      <option value="ai">AI 초대방 · 싱글플레이</option>
-                      <option value="online">친구 초대방 · 온라인</option>
-                    </select>
-                  </label>
-                )}
                 <label>
                   최대 인원
                   <select name="max" defaultValue="4">
@@ -1898,12 +1905,10 @@ function App() {
                     ))}
                   </select>
                 </label>
-                {!SOLO && (
-                  <label className="checkbox">
-                    <input type="checkbox" name="ai" defaultChecked /> AI 대원
-                    초대 허용
-                  </label>
-                )}
+                <label className="checkbox">
+                  <input type="checkbox" name="ai" defaultChecked /> AI 대원
+                  초대 허용
+                </label>
                 <button className="primary wide" disabled={busy}>
                   탐사대 만들기 →
                 </button>

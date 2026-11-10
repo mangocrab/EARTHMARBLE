@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 const KEY = "earthmarble.solo.v1";
 async function start(page: Page, count = "1") {
+  // Offline AI play must work through the unified room even without signaling.
+  await page.route("https://0.peerjs.com/**", (route) => route.abort());
+  await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
+    socket.close(),
+  );
   await page.goto("./");
   await page.getByLabel("탐사대원 닉네임").fill("혼자대원");
   await page.getByRole("button", { name: "탐사대원 등록" }).click();
@@ -11,6 +16,8 @@ async function start(page: Page, count = "1") {
   ).toHaveCount(0);
   await page.getByRole("button", { name: "방 만들기" }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("방 유형")).toHaveCount(0);
+  await expect(dialog.getByLabel("AI 대원 초대 허용")).toBeChecked();
   await dialog.getByRole("button", { name: "탐사대 만들기" }).click();
   await page.getByLabel("AI 난이도").selectOption("hard");
   for (let i = 0; i < Number(count); i++)
@@ -95,7 +102,9 @@ for (const [width, height] of [
     const forbidden: string[] = [],
       errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    page.on("websocket", (s) => forbidden.push(s.url()));
+    page.on("websocket", (s) => {
+      if (!s.url().includes("0.peerjs.com")) forbidden.push(s.url());
+    });
     await page.route("**/*", (r) => {
       if (/\/(api|socket\.io)\//.test(new URL(r.request().url()).pathname)) {
         forbidden.push(r.request().url());
@@ -156,7 +165,9 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
       return buffer;
     }) as typeof crypto.getRandomValues;
   });
-  page.on("websocket", (socket) => forbidden.push(socket.url()));
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes("0.peerjs.com")) forbidden.push(socket.url());
+  });
   await page.route("**/api/**", (route) => {
     forbidden.push(route.request().url());
     return route.abort();

@@ -47,26 +47,34 @@ function options(): PeerOptions {
     config,
   };
 }
-function openPeer(id: string): Promise<Peer> {
+function openPeer(id: string, signal?: AbortSignal): Promise<Peer> {
+  if (signal?.aborted) return Promise.reject(new Error("연결이 취소됐습니다."));
   return new Promise((resolve, reject) => {
     const peer = new Peer(id, options());
-    const timeout = setTimeout(() => {
-      peer.destroy();
-      reject(
-        new Error(
-          "온라인 연결을 준비하지 못했습니다. 잠시 후 다시 시도하세요.",
+    const timeout = setTimeout(
+      () =>
+        failed(
+          new Error(
+            "온라인 연결을 준비하지 못했습니다. 잠시 후 다시 시도하세요.",
+          ),
         ),
-      );
-    }, 12000);
-    const failed = (e: Error) => {
+      12000,
+    );
+    const cancelled = () => failed(new Error("연결이 취소됐습니다."));
+    const cleanup = () => {
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", cancelled);
+      peer.off("error", failed);
+    };
+    const failed = (e: Error) => {
+      cleanup();
       peer.destroy();
       reject(e);
     };
+    signal?.addEventListener("abort", cancelled, { once: true });
     peer.once("error", failed);
     peer.once("open", () => {
-      clearTimeout(timeout);
-      peer.off("error", failed);
+      cleanup();
       resolve(peer);
     });
   });
@@ -126,6 +134,7 @@ export class PeerRoomController {
   private matching = false;
   private matchAt = 0;
   private dead = false;
+  private abort = new AbortController();
   private aiAt = 0;
   private loop: ReturnType<typeof setInterval>;
   private listeners = new Set<(s: Snapshot) => void>();
@@ -172,7 +181,7 @@ export class PeerRoomController {
   private async boot(id = `earthmarble-player-${crypto.randomUUID()}`) {
     if (this.dead) throw new Error("종료된 연결입니다.");
     if (this.peer) return this.peer;
-    const peer = await openPeer(id);
+    const peer = await openPeer(id, this.abort.signal);
     if (this.dead) {
       peer.destroy();
       throw new Error("연결이 취소됐습니다.");
@@ -214,11 +223,23 @@ export class PeerRoomController {
       .replaceAll("-", "")
       .slice(0, 6)
       .toUpperCase();
-    await this.boot(`earthmarble-room-${code}`);
     this.password =
       typeof a.password === "string" ? a.password.slice(0, 64) : "";
     this.makeRoom(code, max, minutes, !!a.allowAI);
+    this.hosted!.connection = "connecting";
     this.broadcast();
+    // Opening the shared room must not block local AI play on signaling access.
+    void this.boot(`earthmarble-room-${code}`)
+      .then(() => {
+        if (this.dead) return;
+        this.hosted!.connection = "ready";
+        this.broadcast();
+      })
+      .catch(() => {
+        if (this.dead) return;
+        this.hosted!.connection = "offline";
+        this.broadcast();
+      });
   }
   async join(code: unknown, password: unknown) {
     if (typeof code !== "string" || !/^[A-Z0-9]{6}$/i.test(code.trim()))
@@ -246,7 +267,7 @@ export class PeerRoomController {
   private async findMatch(peer: Peer) {
     if (this.dead) return;
     try {
-      const finder = await openPeer(FINDER);
+      const finder = await openPeer(FINDER, this.abort.signal);
       if (this.dead) {
         finder.destroy();
         return;
@@ -582,6 +603,7 @@ export class PeerRoomController {
   close() {
     if (this.dead) return;
     this.dead = true;
+    this.abort.abort();
     clearInterval(this.loop);
     for (const { conn } of this.peers.values()) {
       if (conn.open)

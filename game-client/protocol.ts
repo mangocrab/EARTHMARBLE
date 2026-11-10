@@ -17,6 +17,7 @@ export type Room = {
   allowAI: boolean;
   minutes: number;
   members: Member[];
+  connection?: "connecting" | "ready" | "offline";
   game?: GameView;
 };
 export type State = {

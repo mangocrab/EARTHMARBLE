@@ -16,10 +16,36 @@ test("Pages 브라우저 두 명이 방 코드로 접속·준비·게임 상태�
     await login(A, "방장");
     await login(B, "손님");
     await A.getByRole("button", { name: "방 만들기" }).click();
-    await A.getByLabel("방 유형").selectOption("online");
+    await expect(A.getByLabel("방 유형")).toHaveCount(0);
+    await A.getByLabel("AI 대원 초대 허용").uncheck();
+    await A.getByLabel("최대 인원").selectOption("2");
+    await A.getByLabel("탐사 시간").selectOption("20");
     await A.getByLabel("방 비밀번호").fill("earth");
     await A.getByRole("button", { name: "탐사대 만들기" }).click();
+    await expect(A.locator(".waiting h1")).toHaveText("방장님의 방");
+    await expect(A.locator(".waiting")).toContainText("20분 탐사 · 최대 2명");
+    await expect(
+      A.getByRole("button", { name: "AI 초대", exact: true }),
+    ).toHaveCount(0);
+    await expect(A.getByRole("status")).toContainText(
+      "방 코드를 공유해 친구를 초대하세요",
+    );
     const code = await A.locator(".waiting strong").innerText();
+    // Switching tabs must not replace the shared room with the dormant solo state.
+    await A.evaluate(() => {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      delete (document as any).hidden;
+    });
+    await expect(A.locator(".waiting strong")).toHaveText(code);
     await B.getByRole("button", { name: "방 참가하기" }).click();
     await B.getByLabel("방 코드").fill(code);
     await B.getByLabel("비밀번호", { exact: true }).fill("earth");
@@ -42,8 +68,8 @@ test("Pages 브라우저 두 명이 방 코드로 접속·준비·게임 상태�
     await expect(B.locator(".live-activity")).toContainText("방장 · 주사위");
     await expect
       .poll(() =>
-        B.locator('.tokens span[title="방장"]').evaluate((e) =>
-          e.closest(".tile")!.getAttribute("data-tile"),
+        B.locator('.tokens span[title="방장"]').evaluate(
+          (e) => e.closest(".tile")?.getAttribute("data-tile") ?? "0",
         ),
       )
       .not.toBe("0");
@@ -90,7 +116,7 @@ test("온라인 방에 AI만 초대해 시작하면 저장되는 싱글플레이
 }) => {
   await login(page, "AI방장");
   await page.getByRole("button", { name: "방 만들기" }).click();
-  await page.getByLabel("방 유형").selectOption("online");
+  await expect(page.getByLabel("방 유형")).toHaveCount(0);
   await page.getByRole("button", { name: "탐사대 만들기" }).click();
   await page.getByRole("button", { name: "AI 초대", exact: true }).click();
   await page.getByRole("button", { name: "준비 완료", exact: true }).click();
@@ -116,4 +142,30 @@ test("매칭 취소 후 다른 싱글플레이 방을 만들 수 있다", async 
   await page.getByRole("button", { name: "방 만들기" }).click();
   await page.getByRole("button", { name: "탐사대 만들기" }).click();
   await expect(page.locator(".waiting h1")).toContainText("취소대원");
+});
+
+test("친구 연결이 차단돼도 같은 방에서 AI를 초대해 바로 싱글플레이할 수 있다", async ({
+  page,
+}) => {
+  await page.routeWebSocket("ws://127.0.0.1:3206/**", (socket) =>
+    socket.close(),
+  );
+  await login(page, "연결없는대원");
+  await page.getByRole("button", { name: "방 만들기" }).click();
+  await page.getByRole("button", { name: "탐사대 만들기" }).click();
+  await expect(page.locator(".waiting strong")).toHaveText(/^[A-F0-9]{6}$/);
+  await expect(page.getByRole("status")).toContainText(
+    "친구 초대 연결을 준비하지 못했습니다.",
+  );
+  await page.getByLabel("AI 난이도").selectOption("easy");
+  await page.getByRole("button", { name: "AI 초대", exact: true }).click();
+  await page.getByRole("button", { name: "준비 완료", exact: true }).click();
+  await page.getByRole("button", { name: "탐사 시작" }).click();
+  await expect(page.locator(".tile")).toHaveCount(40);
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("earthmarble.solo.v1")!),
+  );
+  expect(saved.room.game.players[1].ai).toBe("easy");
+  await page.reload();
+  await expect(page.locator(".tile")).toHaveCount(40);
 });
