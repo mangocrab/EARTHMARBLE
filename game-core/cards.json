@@ -1,0 +1,245 @@
+[
+  {
+    "id": 1,
+    "name": "지질 조사 성공",
+    "effect": "연구비 20만 획득",
+    "science": "지질 조사는 암석과 지층의 분포를 조사하여 땅이 형성된 역사를 해석하는 활동입니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 2,
+    "name": "화산 연구 성과",
+    "effect": "연구비 15만 획득",
+    "science": "화산 가스와 지표 변형을 관측하면 마그마의 움직임을 연구하는 데 도움이 됩니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 3,
+    "name": "해양 조사 지원금",
+    "effect": "연구비 10만 획득",
+    "science": "해양 탐사에서는 수온, 염분, 해류를 측정하여 바다의 변화를 조사합니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 4,
+    "name": "기상 관측 성과",
+    "effect": "연구비 10만 획득",
+    "science": "기상 관측은 기온, 기압, 습도, 바람과 강수의 변화를 기록하는 일입니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 5,
+    "name": "천문 관측 지원금",
+    "effect": "연구비 30만 획득",
+    "science": "천문 관측은 천체에서 오는 빛을 분석하여 우주의 구조와 변화를 연구합니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 6,
+    "name": "국제 연구상 수상",
+    "effect": "연구비 30만 획득",
+    "science": "국제 공동 연구는 여러 지역의 관측 자료를 비교하여 전 지구적 현상을 이해하는 데 기여합니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 7,
+    "name": "지진 연구 장비 수리",
+    "effect": "연구비 10만 지불",
+    "science": "지진계는 지반의 진동을 기록합니다. 정확한 측정을 위해 장비의 정기 점검이 필요합니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 8,
+    "name": "해양 탐사 장비 수리",
+    "effect": "연구비 10만 지불",
+    "science": "해양 탐사 장비는 높은 수압과 염분에 노출되므로 방수와 부식 관리가 중요합니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 9,
+    "name": "기상 관측 장비 수리",
+    "effect": "연구비 5만 지불",
+    "science": "기상 장비의 센서를 교정하면 장기간 관측 자료의 정확성과 일관성을 높일 수 있습니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 10,
+    "name": "환경오염 부담금",
+    "effect": "기금에 10만 납부",
+    "science": "오염 물질은 대기와 해수의 흐름을 따라 이동하여 생태계에 영향을 줄 수 있습니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 11,
+    "name": "생태계 복원 사업",
+    "effect": "기금에 15만 납부",
+    "science": "생태계 복원은 생물과 서식 환경의 관계를 고려하여 훼손된 자연의 기능을 회복하는 활동입니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 12,
+    "name": "연구시설 유지비",
+    "effect": "보유 시설에 따라 비용",
+    "science": "지속적인 자료 수집에는 연구 시설과 관측 기기의 유지 관리가 필요합니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 13,
+    "name": "관측시설 안전점검",
+    "effect": "보유 시설에 따라 비용",
+    "science": "관측 시설의 안전점검은 극한 기상과 지질 재해에 대비하는 데 도움이 됩니다.",
+    "cardType": "instant",
+    "effectType": "cost"
+  },
+  {
+    "id": 14,
+    "name": "연구 지원금 지급",
+    "effect": "연구비 20만 획득",
+    "science": "여러 차례의 관측과 검증은 자연 현상에 대한 과학적 설명의 신뢰도를 높입니다.",
+    "cardType": "instant",
+    "effectType": "gain"
+  },
+  {
+    "id": 15,
+    "name": "자연보호기금 환급",
+    "effect": "20번으로 이동",
+    "science": "자연환경 보전은 지권, 수권, 기권, 생물권의 상호작용을 함께 고려해야 합니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 16,
+    "name": "제주 화산섬 조사",
+    "effect": "5번으로 이동",
+    "science": "제주에는 용암동굴과 오름처럼 화산 활동의 과정을 보여 주는 지형이 발달해 있습니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 17,
+    "name": "태풍의 눈 관측",
+    "effect": "25번으로 이동",
+    "science": "태풍의 눈에서는 하강 기류가 나타나고 눈벽보다 바람과 강수가 약한 경우가 많습니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 18,
+    "name": "빅뱅 연구 프로젝트",
+    "effect": "39번으로 이동",
+    "science": "우주 배경 복사와 우주의 팽창은 빅뱅 우주론의 중요한 관측 근거입니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 19,
+    "name": "갯벌 생태 조사",
+    "effect": "32번으로 이동",
+    "science": "갯벌은 조석에 따라 드러나거나 잠기는 퇴적 지형이며 다양한 생물의 서식지입니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 20,
+    "name": "해저터널 탐사 이동",
+    "effect": "15번 경유 후 1번 이동",
+    "science": "해저터널 건설에는 해저 지층의 구조와 암석의 안정성을 조사하는 지질 공학이 활용됩니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 21,
+    "name": "제트기류 탑승",
+    "effect": "28번 경유 후 3번 이동",
+    "science": "제트기류는 대류권 상부의 강한 바람이며 항공기 항로와 비행 시간에 영향을 줍니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 22,
+    "name": "간조 특별 이용권",
+    "effect": "30번 이동, 다음 이용료 면제",
+    "science": "간조는 조석 변화 중 해수면이 상대적으로 가장 낮아지는 때입니다.",
+    "cardType": "instant",
+    "effectType": "move",
+    "usage": "간조에서 다음 목적지를 선택할 때 이용료 면제 효과를 한 번 자동 사용합니다."
+  },
+  {
+    "id": 23,
+    "name": "만조 발생",
+    "effect": "10번으로 이동",
+    "science": "만조는 조석 변화 중 해수면이 상대적으로 가장 높아지는 때입니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 24,
+    "name": "만조 탈출권",
+    "effect": "만조 제한을 즉시 해제합니다. 남은 행동 시간 안에 주사위를 굴릴 수 있습니다.",
+    "science": "같은 지점에서도 달과 태양의 상대적인 위치에 따라 조차가 달라집니다.",
+    "cardType": "consumable",
+    "effectType": "escape",
+    "usage": "자신의 차례에 만조에 갇혀 있고, 주사위를 굴리기 전에 사용할 수 있습니다."
+  },
+  {
+    "id": 25,
+    "name": "통행료 면제권",
+    "effect": "이번 소유지 또는 이동수단 통행료를 면제합니다. 간조 이용료에는 적용되지 않습니다.",
+    "science": "연구 탐사의 위험을 줄이려면 지형과 기상을 사전에 파악하고 대비해야 합니다.",
+    "cardType": "consumable",
+    "effectType": "waiver",
+    "usage": "자신의 차례에 다른 대원의 통행료를 정산하기 전에 사용할 수 있습니다."
+  },
+  {
+    "id": 26,
+    "name": "탐사 본부 귀환",
+    "effect": "0번으로 이동",
+    "science": "관측 자료를 탐사 본부에서 모아 비교하면 서로 다른 지역의 변화를 연결해 해석할 수 있습니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 27,
+    "name": "전 지구 탐사",
+    "effect": "한 바퀴 이동 및 시작 보상",
+    "science": "전 지구 관측망은 대기와 해양의 순환처럼 넓은 규모의 현상을 연구하는 데 쓰입니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 28,
+    "name": "관측 지역 재배치",
+    "effect": "2칸 뒤로 이동",
+    "science": "같은 현상도 관측 지점이 달라지면 다른 자료가 나타날 수 있어 공간적인 비교가 필요합니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 29,
+    "name": "지구과학 긴급 조사",
+    "effect": "3칸 뒤로 이동",
+    "science": "긴급 현장 조사는 재해 직후 빠르게 변하는 현상을 기록하는 데 중요합니다.",
+    "cardType": "instant",
+    "effectType": "move"
+  },
+  {
+    "id": 30,
+    "name": "연구소 구조조정",
+    "effect": "가장 비싼 소유지를 은행에 절반 가격으로 매각",
+    "science": "과학 연구는 한정된 자원을 고려하여 관측 시설과 연구 계획을 조정하기도 합니다.",
+    "cardType": "instant",
+    "effectType": "sell"
+  }
+]

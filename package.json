@@ -1,0 +1,41 @@
+{
+  "name": "earth-marble",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx game-server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "start": "NODE_ENV=production tsx game-server/index.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "dev:solo": "vite --mode solo --host 0.0.0.0",
+    "build:pages": "tsc --noEmit && vite build --mode pages",
+    "preview:pages": "vite preview --mode pages --host 0.0.0.0",
+    "test:pages": "playwright test -c playwright.pages.config.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "three": "^0.180.0",
+    "tsx": "^4.20.0",
+    "vite": "^7.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/three": "^0.180.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
