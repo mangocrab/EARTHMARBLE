@@ -190,9 +190,18 @@ test("매칭 취소 후 다른 싱글플레이 방을 만들 수 있다", async 
 test("친구 연결이 차단돼도 같은 방에서 AI를 초대해 바로 싱글플레이할 수 있다", async ({
   page,
 }) => {
-  await page.routeWebSocket("ws://127.0.0.1:3206/**", (socket) =>
-    socket.close(),
-  );
+  // Keep native socket failure events without a mocked route surviving reload.
+  await page.addInitScript(() => {
+    const NativeSocket = window.WebSocket;
+    window.WebSocket = class extends NativeSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        const target = new URL(url);
+        if (target.hostname === "127.0.0.1" && target.port === "3206")
+          target.port = "3209"; // No signaling listener at this loopback port.
+        super(target, protocols);
+      }
+    };
+  });
   await login(page, "연결없는대원");
   await page.getByRole("button", { name: "방 만들기" }).click();
   await page.getByRole("button", { name: "탐사대 만들기" }).click();
@@ -211,8 +220,6 @@ test("친구 연결이 차단돼도 같은 방에서 AI를 초대해 바로 싱�
   expect(saved.room.game.players[1].ai).toBe("easy");
   await page.reload();
   await expect(page.locator(".tile")).toHaveCount(40);
-  // Stop the deliberately rejected socket attempts before closing the routed context.
-  await page.goto("about:blank");
 });
 
 test("방장이 사람과 AI를 강퇴하면 대기실과 상대 화면에 즉시 반영된다", async ({
