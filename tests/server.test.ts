@@ -410,3 +410,81 @@ it("방장만 대기실 사람·AI를 강퇴하며 재입장과 중복 명령을
     ).ok,
   ).toBe(false);
 });
+
+it("방 목록은 공개 대기실 정보만 반환하고 정원·시작·나가기를 반영한다", async () => {
+  const a = await identity("목록주인"),
+    b = await identity("목록방문"),
+    c = await identity("닫을방");
+  const A = await connect(a.cookie),
+    B = await connect(b.cookie),
+    C = await connect(c.cookie);
+  const list = (s: Socket) =>
+    new Promise<any>((resolve, reject) =>
+      s
+        .timeout(5000)
+        .emit("room-list", (error: Error | null, value: any) =>
+          error ? reject(error) : resolve(value),
+        ),
+    );
+  await cmd(A.s, {
+    type: "create",
+    max: 2,
+    minutes: 20,
+    allowAI: true,
+    password: "secret",
+  });
+  const code = A.states.at(-1).room.code;
+  let result = await list(B.s);
+  expect(result.ok).toBe(true);
+  let row = result.rooms.find((r: any) => r.code === code);
+  expect(row).toMatchObject({
+    name: "목록주인님의 방",
+    hostName: "목록주인",
+    count: 1,
+    max: 2,
+    minutes: 20,
+    allowAI: true,
+    locked: true,
+  });
+  expect(Object.keys(row).sort()).toEqual(
+    [
+      "id",
+      "code",
+      "name",
+      "hostName",
+      "count",
+      "max",
+      "minutes",
+      "allowAI",
+      "locked",
+    ].sort(),
+  );
+  expect(JSON.stringify(row)).not.toContain("secret");
+  await cmd(A.s, { type: "ai", difficulty: "normal" });
+  row = (await list(B.s)).rooms.find((r: any) => r.code === code);
+  expect(row.count).toBe(2);
+  const bot = A.states.at(-1).room.members.find((m: any) => m.ai);
+  await cmd(A.s, { type: "kick", member: bot.id });
+  expect(
+    (await cmd(B.s, { type: "join", code: row.code, password: "secret" })).ok,
+  ).toBe(true);
+  await cmd(A.s, { type: "ready" });
+  await cmd(B.s, { type: "ready" });
+  await cmd(A.s, { type: "start" });
+  expect((await list(C.s)).rooms.some((r: any) => r.code === code)).toBe(false);
+  await cmd(C.s, {
+    type: "create",
+    max: 4,
+    minutes: 10,
+    allowAI: false,
+    password: "",
+  });
+  const closed = C.states.at(-1).room.code;
+  expect((await list(A.s)).rooms.some((r: any) => r.code === closed)).toBe(
+    true,
+  );
+  await cmd(C.s, { type: "leave" });
+  expect((await list(A.s)).rooms.some((r: any) => r.code === closed)).toBe(
+    false,
+  );
+});

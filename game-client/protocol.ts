@@ -29,3 +29,16 @@ export type State = {
   clockNow?: number;
 };
 export type Snapshot = State & { serverNow: number };
+
+/** Public waiting-room metadata only: never include passwords or game state. */
+export type RoomListing = {
+  id: string;
+  code: string;
+  name: string;
+  hostName: string;
+  count: number;
+  max: number;
+  allowAI: boolean;
+  minutes: number;
+  locked: boolean;
+};

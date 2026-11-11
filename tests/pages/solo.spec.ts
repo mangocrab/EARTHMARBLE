@@ -832,3 +832,28 @@ test("사이트 삽입 환경이 저장소 접근을 차단해도 현재 AI 게�
   await expect(game.locator(".live-activity")).toContainText("주사위");
   expect(errors).toEqual([]);
 });
+
+test("방 목록은 코드 입력 없이 열리며 연결 실패를 가짜 목록으로 표시하지 않는다", async ({
+  page,
+}) => {
+  await page.route("https://0.peerjs.com/**", (r) => r.abort());
+  await page.routeWebSocket("wss://0.peerjs.com/**", (s) => s.close());
+  await page.goto("./");
+  await page.getByLabel("탐사대원 닉네임").fill("목록대원");
+  await page.getByRole("button", { name: "탐사대원 등록" }).click();
+  await page.getByRole("button", { name: "방 참가하기" }).click();
+  await expect(page.getByRole("dialog")).toContainText("열린 방 목록");
+  await expect(page.getByLabel("방 코드")).toHaveCount(0);
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText(
+    "방 목록에 연결하지 못했습니다",
+    { timeout: 15000 },
+  );
+  await expect(page.locator(".room-list-item")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "새로고침", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "닫기", exact: true }).click();
+  await page.getByRole("button", { name: "방 만들기" }).click();
+  await page.getByRole("button", { name: "탐사대 만들기" }).click();
+  await expect(page.locator(".waiting h1")).toHaveText("목록대원님의 방");
+});

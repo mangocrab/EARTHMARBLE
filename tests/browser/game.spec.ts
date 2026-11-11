@@ -61,12 +61,16 @@ test("PC: 두 탐사대원, 비밀번호 방, 서버 주사위, 상세 카드, �
   await A.getByLabel("방 비밀번호").fill("earth");
   await A.getByRole("button", { name: "탐사대 만들기" }).click();
   await expect(A.getByText("바다님의 방")).toBeVisible();
-  const code = await A.locator(".waiting strong").innerText();
   await B.getByRole("button", { name: "방 참가하기" }).click();
-  await B.getByLabel("방 코드").fill(code);
+  await expect(B.getByLabel("방 코드")).toHaveCount(0);
+  await B.getByRole("button", {
+    name: "바다님의 방 참가",
+    exact: true,
+  }).click();
   await B.getByLabel("비밀번호", { exact: true }).fill("earth");
   await B.getByRole("button", { name: "참가하기 →", exact: true }).click();
   await expect(B.getByText("바다님의 방")).toBeVisible();
+  await expect(A.locator(".crew-list")).toContainText("우주");
   await A.getByRole("button", { name: "준비 완료", exact: true }).click();
   await B.getByRole("button", { name: "준비 완료", exact: true }).click();
   await A.getByRole("button", { name: "탐사 시작" }).click();

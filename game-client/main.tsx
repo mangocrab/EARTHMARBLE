@@ -20,7 +20,8 @@ import { PropertyArt, CardArt } from "./Art";
 const Dice = React.lazy(() =>
   import("./Dice").then((m) => ({ default: m.Dice })),
 );
-import type { State } from "./protocol";
+import type { State, RoomListing } from "./protocol";
+import type { RoomDirectory, DirectoryStatus } from "./room-directory";
 import type { SoloController } from "./solo";
 import type { PeerRoomController } from "./peer-room";
 const SOLO =
@@ -129,6 +130,12 @@ function App() {
   const [boardPixels, setBoardPixels] = useState(320);
   const solo = useRef<SoloController | null>(null);
   const peerRoom = useRef<PeerRoomController | null>(null);
+  const browserDirectory = useRef<RoomDirectory | null>(null);
+  const [roomList, setRoomList] = useState<RoomListing[]>([]);
+  const [directoryStatus, setDirectoryStatus] =
+    useState<DirectoryStatus>("connecting");
+  const [listRefresh, setListRefresh] = useState(0);
+  const [joinRoom, setJoinRoom] = useState<RoomListing | null>(null);
   const [actionDock, setActionDock] = useState<HTMLDivElement | null>(null);
   const [identityMode, setIdentityMode] = useState("standalone");
   const socket = useRef<Socket | null>(null);
@@ -203,6 +210,10 @@ function App() {
     s.on("connect", () => setConnected(true));
     s.on("disconnect", () => setConnected(false));
     s.on("connect_error", (e) => setError(e.message));
+    s.on("room-list", (rooms: RoomListing[]) => {
+      setRoomList(rooms);
+      setDirectoryStatus("ready");
+    });
     s.on("kicked", (message: string) => setError(message));
     s.on("state", (snapshot: State & { serverNow: number }) => {
       clockOffset.current = snapshot.serverNow - Date.now();
@@ -308,6 +319,66 @@ function App() {
       );
     else if (myTurn && g.turn !== before.turn) playSound("turn");
   }, [g, myTurn, p]);
+  useEffect(() => {
+    if (panel !== "join" || !me) return;
+    setJoinRoom(null);
+    setRoomList([]);
+    setDirectoryStatus(connected ? "connecting" : "offline");
+    if (!connected) return;
+    let stopped = false,
+      directory: RoomDirectory | undefined;
+    if (SOLO) {
+      void import("./room-directory")
+        .then(({ RoomDirectory }) => {
+          if (stopped) return;
+          directory = new RoomDirectory((rooms, status) => {
+            if (!stopped) {
+              setRoomList(rooms);
+              setDirectoryStatus(status);
+            }
+          });
+          browserDirectory.current = directory;
+        })
+        .catch(() => {
+          if (!stopped) setDirectoryStatus("offline");
+        });
+    } else
+      socket.current
+        ?.timeout(8000)
+        .emit(
+          "room-list",
+          (
+            timeout: Error | null,
+            result: { ok: boolean; rooms?: RoomListing[]; error?: string },
+          ) => {
+            if (stopped) return;
+            if (timeout || !result?.ok) {
+              setDirectoryStatus("offline");
+              return;
+            }
+            setRoomList(result.rooms!);
+            setDirectoryStatus("ready");
+          },
+        );
+    return () => {
+      stopped = true;
+      directory?.close();
+      if (browserDirectory.current === directory)
+        browserDirectory.current = null;
+    };
+  }, [panel, connected, me?.id, listRefresh]);
+  function refreshRooms() {
+    if (SOLO && browserDirectory.current) browserDirectory.current.refresh();
+    else setListRefresh((n) => n + 1);
+  }
+  function chooseRoom(selectedRoom: RoomListing) {
+    if (busy || selectedRoom.count >= selectedRoom.max) return;
+    if (selectedRoom.locked) setJoinRoom(selectedRoom);
+    else
+      command({ type: "join", code: selectedRoom.code, password: "" }, () =>
+        setPanel(""),
+      );
+  }
   const [drawOrigin, setDrawOrigin] = useState<React.CSSProperties>({});
   useLayoutEffect(() => {
     if (g?.phase !== "reveal") return;
@@ -982,7 +1053,7 @@ function App() {
                 >
                   <span>
                     ⌁ <b>방 참가하기</b>
-                    <small>초대받은 탐사대로 합류</small>
+                    <small>열린 방 목록에서 선택</small>
                   </span>
                   <span>→</span>
                 </button>
@@ -1027,7 +1098,7 @@ function App() {
           <div className="eyebrow">
             {SOLO && !peerRoom.current
               ? "SINGLE PLAYER LOUNGE"
-              : `EXPEDITION LOUNGE / ${room.code}`}
+              : "EXPEDITION LOUNGE"}
           </div>
           <h1>{room.name}</h1>
           <p>
@@ -1035,7 +1106,10 @@ function App() {
               "로컬 대기실 · 시작 시 싱글플레이"
             ) : (
               <>
-                방 코드 <strong>{room.code}</strong>
+                방장{" "}
+                <strong>
+                  {room.members.find((m) => m.id === room.host)?.name}
+                </strong>
               </>
             )}{" "}
             · {room.minutes}분 탐사 · 최대 {room.max}명
@@ -1043,12 +1117,12 @@ function App() {
           {peerRoom.current && (
             <p className="fine" role="status">
               {room.connection === "connecting"
-                ? `친구 초대 연결 준비 중입니다.${room.allowAI ? " AI 초대와 게임 시작은 바로 할 수 있습니다." : ""}`
+                ? `방 목록 등록 준비 중입니다.${room.allowAI ? " AI 초대와 게임 시작은 바로 할 수 있습니다." : ""}`
                 : room.connection === "offline"
                   ? room.allowAI
-                    ? "친구 초대 연결을 준비하지 못했습니다. AI만 초대해 플레이할 수 있습니다."
-                    : "친구 초대 연결을 준비하지 못했습니다. 나갔다가 다시 방을 만들어 주세요."
-                  : "방 코드를 공유해 친구를 초대하세요. 온라인 방장은 이 창을 열어 두어야 합니다."}
+                    ? "방 목록에 등록하지 못했습니다. AI만 초대해 플레이할 수 있습니다."
+                    : "방 목록에 등록하지 못했습니다. 나갔다가 다시 방을 만들어 주세요."
+                  : "친구는 방 목록에서 이 방을 선택해 참가할 수 있습니다. 온라인 방장은 이 창을 열어 두어야 합니다."}
               {room.allowAI && " AI만 초대해 시작하면 싱글플레이로 전환합니다."}
             </p>
           )}
@@ -1808,7 +1882,7 @@ function App() {
                   "solo-reset": "새 탐사 준비",
                   journal: "탐사 일지",
                   create: "새 탐사대 만들기",
-                  join: "탐사대 합류",
+                  join: "열린 방 목록",
                   settings: "탐사 환경 설정",
                   help: "함께 지구를 탐사하는 법",
                   properties: "내 소유지",
@@ -1944,37 +2018,122 @@ function App() {
               </form>
             )}
             {panel === "join" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  command(
-                    {
-                      type: "join",
-                      code: f.get("code"),
-                      password: f.get("password"),
-                    },
-                    () => setPanel(""),
-                  );
-                }}
-              >
-                <label>
-                  방 코드
-                  <input
-                    name="code"
-                    required
-                    maxLength={6}
-                    placeholder="6자리 초대 코드"
-                  />
-                </label>
-                <label>
-                  비밀번호
-                  <input name="password" type="password" maxLength={64} />
-                </label>
-                <button className="primary wide" disabled={busy}>
-                  참가하기 →
-                </button>
-              </form>
+              <div className="room-browser">
+                {joinRoom ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const current = roomList.find(
+                        (r) => r.id === joinRoom.id,
+                      );
+                      if (!current || current.count >= current.max) return;
+                      const f = new FormData(e.currentTarget);
+                      command(
+                        {
+                          type: "join",
+                          code: current.code,
+                          password: f.get("password"),
+                        },
+                        () => setPanel(""),
+                      );
+                    }}
+                  >
+                    <h3>{joinRoom.name}</h3>
+                    {!roomList.some(
+                      (r) => r.id === joinRoom.id && r.count < r.max,
+                    ) && directoryStatus === "ready" ? (
+                      <p role="status">
+                        이 방은 닫혔거나 게임이 시작됐거나 정원이 찼습니다. 다른
+                        방을 선택하세요.
+                      </p>
+                    ) : (
+                      <p>
+                        비밀번호가 있는 방입니다. 비밀번호를 입력하면
+                        참가합니다.
+                      </p>
+                    )}
+                    <label>
+                      비밀번호
+                      <input
+                        name="password"
+                        type="password"
+                        maxLength={64}
+                        autoFocus
+                      />
+                    </label>
+                    <button
+                      className="primary wide"
+                      disabled={
+                        busy ||
+                        !roomList.some(
+                          (r) => r.id === joinRoom.id && r.count < r.max,
+                        )
+                      }
+                    >
+                      참가하기 →
+                    </button>
+                    <button
+                      type="button"
+                      className="wide"
+                      onClick={() => setJoinRoom(null)}
+                    >
+                      다른 방 보기
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <div className="room-browser-toolbar">
+                      <p role="status">
+                        {directoryStatus === "ready"
+                          ? roomList.length
+                            ? `열린 방 ${roomList.length}개 · 자동 갱신 중`
+                            : "열린 방이 없습니다. 새 방을 만들어 보세요."
+                          : directoryStatus === "offline"
+                            ? "방 목록에 연결하지 못했습니다. 새로고침해 주세요."
+                            : "방 목록에 연결 중입니다…"}
+                      </p>
+                      <button type="button" onClick={refreshRooms}>
+                        새로고침
+                      </button>
+                    </div>
+                    <div className="room-list" aria-label="열린 방">
+                      {roomList.map((r) => (
+                        <button
+                          type="button"
+                          className="room-list-item"
+                          key={r.id}
+                          aria-label={`${r.name} 참가`}
+                          disabled={busy || r.count >= r.max}
+                          onClick={() => chooseRoom(r)}
+                        >
+                          <span>
+                            <b>
+                              {r.locked ? "🔒 " : ""}
+                              {r.name}
+                            </b>
+                            <small>
+                              방장 {r.hostName} · {r.minutes}분 ·{" "}
+                              {r.allowAI ? "AI 허용" : "사람만"}
+                            </small>
+                          </span>
+                          <span>
+                            <strong>
+                              {r.count}/{r.max}명
+                            </strong>
+                            <small>
+                              {r.count >= r.max
+                                ? "정원 마감"
+                                : r.locked
+                                  ? "비밀번호 입력"
+                                  : "바로 참가 →"}
+                            </small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             {panel === "settings" && (
               <>

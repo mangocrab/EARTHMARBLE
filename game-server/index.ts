@@ -22,6 +22,7 @@ import {
   type Difficulty,
 } from "../game-core";
 import { decide } from "../game-ai";
+import type { RoomListing } from "../game-client/protocol";
 import {
   newToken,
   hashToken,
@@ -257,6 +258,37 @@ function publicRoom(r: Room, id: string) {
     game: r.game ? view(r.game, id) : undefined,
   };
 }
+function roomListings(): RoomListing[] {
+  return [...rooms.values()]
+    .filter(
+      (r) =>
+        !r.game && r.members.some((m) => m.id === r.host && !m.offlineSince),
+    )
+    .map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      hostName: r.members.find((m) => m.id === r.host)!.name,
+      count: r.members.length,
+      max: r.max,
+      allowAI: r.allowAI,
+      minutes: r.minutes,
+      locked: !!r.password,
+    }))
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, "ko") || a.code.localeCompare(b.code),
+    );
+}
+let roomListFingerprint = "";
+function announceRooms() {
+  const list = roomListings(),
+    fingerprint = JSON.stringify(list);
+  if (fingerprint !== roomListFingerprint) {
+    roomListFingerprint = fingerprint;
+    io.emit("room-list", list);
+  }
+}
 function send(id: string) {
   const r = findRoom(id);
   io.to("user:" + id).emit("state", {
@@ -270,6 +302,7 @@ function send(id: string) {
 function broadcast(r: Room) {
   persist(r);
   for (const m of r.members) if (!m.ai) send(m.id);
+  announceRooms();
 }
 function roomChanged(r: Room) {
   r.version++;
@@ -346,6 +379,19 @@ io.on("connection", (socket) => {
     broadcast(room);
   } else send(user.id);
 
+  socket.on("room-list", async (ack: unknown) => {
+    if (typeof ack !== "function") return;
+    try {
+      permit("room-list:" + user.id, 30, 60000);
+      if (session(socket.request.headers.cookie)?.id !== user.id)
+        throw new Error("게임 세션이 만료됐습니다. 다시 접속하세요.");
+      if (external && (await external.resolve(socket.request))?.id !== user.id)
+        throw new Error("사이트 로그인 확인이 필요합니다.");
+      ack({ ok: true, rooms: roomListings() });
+    } catch (e) {
+      ack({ ok: false, error: (e as Error).message });
+    }
+  });
   socket.on("command", async (input: unknown, ack: unknown) => {
     const reply = typeof ack === "function" ? ack : () => {};
     let inTransaction = false;
@@ -559,11 +605,13 @@ io.on("connection", (socket) => {
       ).run(user.id, user.id);
       db.exec("COMMIT");
       inTransaction = false;
+      announceRooms();
       reply({ ok: true });
     } catch (e) {
       if (inTransaction) {
         db.exec("ROLLBACK");
         restore();
+        announceRooms();
         queueState();
       }
       reply({ ok: false, error: (e as Error).message });
@@ -644,6 +692,7 @@ setInterval(() => {
       broadcast(r);
     }
   }
+  announceRooms();
   if (now - lastAI >= 900) lastAI = now;
 }, 40).unref();
 if (process.env.NODE_ENV === "production") {

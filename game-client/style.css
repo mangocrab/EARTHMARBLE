@@ -3303,3 +3303,47 @@ small {
   font-weight: normal;
   margin: 8px 0 0;
 }
+
+.room-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+}
+.room-browser-toolbar p {
+  font-size: 13px;
+}
+.room-list {
+  display: grid;
+  gap: 10px;
+}
+.room-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  text-align: left;
+}
+.room-list-item span {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.room-list-item span:last-child {
+  text-align: right;
+  flex-shrink: 0;
+}
+.room-list-item b {
+  overflow-wrap: anywhere;
+}
+.room-list-item small {
+  font-size: 12px;
+  color: #708475;
+}
+.room-browser form {
+  display: grid;
+  gap: 14px;
+}

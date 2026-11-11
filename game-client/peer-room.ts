@@ -1,4 +1,6 @@
-import Peer, { type DataConnection, type PeerOptions } from "peerjs";
+import Peer, { type DataConnection } from "peerjs";
+import { openPeer, connect } from "./peer-transport";
+import { RoomDirectory } from "./room-directory";
 import {
   createGame,
   apply,
@@ -17,97 +19,10 @@ type Identity = { id: string; name: string };
 type HostedRoom = Omit<Room, "game"> & { game?: Game };
 const FINDER = "earthmarble-match-lobby-v1";
 const levels = ["easy", "normal", "hard"];
-function options(): PeerOptions {
-  // PeerJS 1.5 ships retired TURN hostnames. Use reachable public STUN for
-  // direct connections; a relay can be injected for controlled deployments/tests.
-  const config: RTCConfiguration = {
-    iceServers: [
-      {
-        urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"],
-      },
-    ],
-  };
-  if (import.meta.env.VITE_TURN_URL)
-    config.iceServers = [
-      {
-        urls: import.meta.env.VITE_TURN_URL,
-        username: "earth",
-        credential: "earth-test",
-      },
-    ];
-  const url = import.meta.env.VITE_SIGNAL_URL;
-  if (!url) return { debug: 0, config };
-  const u = new URL(url);
-  return {
-    host: u.hostname,
-    port: +u.port || (u.protocol === "https:" ? 443 : 80),
-    secure: u.protocol === "https:",
-    path: u.pathname,
-    debug: 0,
-    config,
-  };
-}
-function openPeer(id: string, signal?: AbortSignal): Promise<Peer> {
-  if (signal?.aborted) return Promise.reject(new Error("연결이 취소됐습니다."));
-  return new Promise((resolve, reject) => {
-    const peer = new Peer(id, options());
-    const timeout = setTimeout(
-      () =>
-        failed(
-          new Error(
-            "온라인 연결을 준비하지 못했습니다. 잠시 후 다시 시도하세요.",
-          ),
-        ),
-      12000,
-    );
-    const cancelled = () => failed(new Error("연결이 취소됐습니다."));
-    const cleanup = () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", cancelled);
-      peer.off("error", failed);
-    };
-    const failed = (e: Error) => {
-      cleanup();
-      peer.destroy();
-      reject(e);
-    };
-    signal?.addEventListener("abort", cancelled, { once: true });
-    peer.once("error", failed);
-    peer.once("open", () => {
-      cleanup();
-      resolve(peer);
-    });
-  });
-}
-function connect(peer: Peer, id: string): Promise<DataConnection> {
-  return new Promise((resolve, reject) => {
-    const c = peer.connect(id, { reliable: true, serialization: "binary" });
-    const timer = setTimeout(() => {
-      c.close();
-      reject(
-        new Error(
-          "방에 연결할 수 없습니다. 방 코드와 방장의 연결 상태를 확인하세요.",
-        ),
-      );
-    }, 15000);
-    c.once("open", () => {
-      clearTimeout(timer);
-      resolve(c);
-    });
-    c.once("error", (e) => {
-      clearTimeout(timer);
-      c.close();
-      reject(e);
-    });
-    c.once("close", () => {
-      clearTimeout(timer);
-      reject(new Error("연결이 닫혔습니다."));
-    });
-  });
-}
 export class PeerRoomController {
   private peer?: Peer;
   private finder?: Peer;
+  private directory?: RoomDirectory;
   private upstream?: DataConnection;
   private hosted?: HostedRoom;
   private password = "";
@@ -174,10 +89,38 @@ export class PeerRoomController {
   }
   private broadcast() {
     if (this.dead) return;
+    this.syncDirectory();
     this.emit(this.stateFor(this.me.id));
     for (const { conn, identity } of this.peers.values())
       if (conn.open)
         conn.send({ type: "state", state: this.stateFor(identity.id) });
+  }
+  private syncDirectory() {
+    const r = this.hosted;
+    if (!r || r.game || this.matching || !this.peer || this.peer.destroyed) {
+      this.directory?.close();
+      this.directory = undefined;
+      return;
+    }
+    if (!this.directory)
+      this.directory = new RoomDirectory((_rooms, status) => {
+        if (this.dead || !this.hosted || this.hosted.game) return;
+        if (this.hosted.connection !== status) {
+          this.hosted.connection = status;
+          this.broadcast();
+        }
+      }, this.peer);
+    this.directory.setRoom({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      hostName: r.members.find((m) => m.id === r.host)!.name,
+      count: r.members.length,
+      max: r.max,
+      allowAI: r.allowAI,
+      minutes: r.minutes,
+      locked: !!this.password,
+    });
   }
   private async boot(id = `earthmarble-player-${crypto.randomUUID()}`) {
     if (this.dead) throw new Error("종료된 연결입니다.");
@@ -233,7 +176,6 @@ export class PeerRoomController {
     void this.boot(`earthmarble-room-${code}`)
       .then(() => {
         if (this.dead) return;
-        this.hosted!.connection = "ready";
         this.broadcast();
       })
       .catch(() => {
@@ -244,7 +186,7 @@ export class PeerRoomController {
   }
   async join(code: unknown, password: unknown) {
     if (typeof code !== "string" || !/^[A-Z0-9]{6}$/i.test(code.trim()))
-      throw new Error("6자리 방 코드를 확인하세요.");
+      throw new Error("입장할 방을 다시 선택하세요.");
     const peer = await this.boot();
     await this.joinHost(
       peer,
@@ -623,6 +565,8 @@ export class PeerRoomController {
   close() {
     if (this.dead) return;
     this.dead = true;
+    this.directory?.close();
+    this.directory = undefined;
     this.abort.abort();
     clearInterval(this.loop);
     for (const { conn } of this.peers.values()) {
