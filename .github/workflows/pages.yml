@@ -14,6 +14,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    env:
+      CHROMIUM_PATH: /usr/bin/google-chrome
+      EARTH_TEST_TURN_EXTERNAL: "true"
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -30,8 +33,10 @@ jobs:
       - run: npm run build:pages
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}/
-      - run: npx playwright install --with-deps chromium
-      - run: sudo apt-get install -y coturn
+      - name: Check preinstalled Chrome
+        run: '"$CHROMIUM_PATH" --version'
+      - name: Start test TURN relay
+        run: bash tests/fixtures/turn-container.sh start
       - run: npm run test:peer
       - run: npm run test:pages
         env:
@@ -55,3 +60,6 @@ jobs:
             core.setFailed('Pages artifact metadata is not yet available.');
       - uses: actions/deploy-pages@v4
         id: deployment
+      - name: Stop test TURN relay
+        if: always()
+        run: bash tests/fixtures/turn-container.sh stop

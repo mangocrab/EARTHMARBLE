@@ -35,7 +35,7 @@ Pages 방 목록은 대기실/목록 브라우저 중 하나가 임시 WebRTC �
 
 ### 온라인 연결 테스트
 
-`npm run test:peer`는 실제 두 Chromium 브라우저를 로컬 PeerJS 신호 서버와 TCP TURN 중계로 연결합니다. `coturn`의 `turnserver`가 필요하며 `TURN_SERVER_BIN`으로 실행 파일을 지정할 수 있습니다. `VITE_SIGNAL_URL` / `VITE_TURN_URL`은 테스트용 신호·중계 경로를 주입하며, 배포 빌드는 공개 신호 서버와 STUN을 사용합니다. 브라우저의 UDP 보호 정책은 변경하지 않습니다.
+`npm run test:peer`는 실제 두 Chromium 브라우저를 로컬 PeerJS 신호 서버와 TCP TURN 중계로 연결합니다. GitHub Actions에서는 Ubuntu 24.04에 사전 설치된 Chrome과 `coturn/coturn:4.6.3` 컨테이너를 사용하여 실행 중 Ubuntu 패키지를 내려받지 않습니다. `coturn`의 `turnserver`가 필요하며 `TURN_SERVER_BIN`으로 실행 파일을 지정할 수 있습니다. `VITE_SIGNAL_URL` / `VITE_TURN_URL`은 테스트용 신호·중계 경로를 주입하며, 배포 빌드는 공개 신호 서버와 STUN을 사용합니다. 브라우저의 UDP 보호 정책은 변경하지 않습니다.
 
 ## 관전·채팅·전적
 
@@ -138,3 +138,13 @@ GitHub 저장소의 **Settings → Pages → Source**는 **GitHub Actions**여�
 [이랜서의 다크모드 UI 디자인 글](https://www.elancer.co.kr/blog/detail/293)의 명암·색상 대비·깊이감 원칙을 참고했습니다. 기본 UI는 녹색 대신 무채색으로 구성하며 배경보다 패널, 패널보다 모달·공개 카드가 밝은 회색이 되도록 구분합니다. 공개 카드 앞면과 덱 뒷면 모두 어두운 표면을 사용합니다. 뽑기 카드의 배경 밝기와 본문 대비를 실제 브라우저에서 검증하며, 구역 띠·플레이어 말·관전 배지의 색은 구분 기능을 유지합니다.
 
 게임마다 무작위로 진행 순서를 뽑으며 참가자 목록과 말 번호에 표시합니다. 빠른게임(2인)은 60초 동안 혼자 대기하면 어려움 AI와 시작하고, 일반게임(4인)은 계속 사람을 기다립니다. 행동 타이머와 공용 덱·버림 장수는 지도 위의 별도 줄에 항상 표시합니다. 하단의 **채팅 열기**에서 대화할 수 있으며 읽지 않은 메시지는 숫자 배지로 표시합니다.
+
+Docker가 있는 Linux 환경에서는 컨테이너 중계를 직접 사용할 수도 있습니다.
+
+```bash
+bash tests/fixtures/turn-container.sh start
+EARTH_TEST_TURN_EXTERNAL=true npm run test:peer
+bash tests/fixtures/turn-container.sh stop
+```
+
+중계는 루프백 주소에만 바인딩하며 테스트 전용 계정을 사용합니다. `EARTH_TEST_TURN_EXTERNAL`은 테스트 프로세스에서만 읽습니다.

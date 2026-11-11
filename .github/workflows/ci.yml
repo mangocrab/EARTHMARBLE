@@ -3,6 +3,9 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-24.04
+    env:
+      CHROMIUM_PATH: /usr/bin/google-chrome
+      EARTH_TEST_TURN_EXTERNAL: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,10 +15,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      - name: Check preinstalled Chrome
+        run: '"$CHROMIUM_PATH" --version'
       - run: npm run test:e2e
       - run: npm run build:pages
-      - run: sudo apt-get install -y coturn
+      - name: Start test TURN relay
+        run: bash tests/fixtures/turn-container.sh start
       - run: npm run test:peer
       - run: npm run test:pages
       - uses: actions/upload-artifact@v4
@@ -23,3 +28,6 @@ jobs:
         with:
           name: browser-test-results
           path: test-results/
+      - name: Stop test TURN relay
+        if: always()
+        run: bash tests/fixtures/turn-container.sh stop
