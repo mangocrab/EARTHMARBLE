@@ -1085,3 +1085,75 @@ for (const [width, height] of [
     }
   });
 }
+
+for (const width of [320, 768, 1440]) {
+  test(`${width}px: 양이·지온 원본 스티커 선택·전송·저장과 Pages 이미지 경로`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: width === 320 ? 568 : 900 });
+    await start(page);
+    await page.getByRole("button", { name: "채팅", exact: true }).click();
+    const panel = page.locator(".chat-panel");
+    await expect(panel.locator(".emoji-tray button")).toHaveCount(10);
+    const girl = panel.getByRole("button", {
+      name: "양이 하트 이모티콘",
+      exact: true,
+    });
+    await girl.scrollIntoViewIfNeeded();
+    await expect(girl).toBeInViewport();
+    await expect
+      .poll(() =>
+        girl
+          .locator("img")
+          .evaluate((img: HTMLImageElement) => img.naturalWidth),
+      )
+      .toBe(512);
+    await page.screenshot({
+      path: `test-results-pages/sticker-picker-${width}.png`,
+    });
+    expect(
+      await panel
+        .locator(".emoji-tray")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await girl.click();
+    await expect(
+      panel.getByRole("log").getByAltText("양이 하트"),
+    ).toBeVisible();
+    await expect(girl).toBeDisabled();
+    await panel.getByRole("button", { name: "지온", exact: true }).click();
+    await expect(panel.locator(".emoji-tray button")).toHaveCount(10);
+    const boy = panel.getByRole("button", {
+      name: "지온 최고 이모티콘",
+      exact: true,
+    });
+    await expect(boy).toBeEnabled({ timeout: 5000 });
+    await boy.click();
+    await page.keyboard.press("Escape");
+    const preview = page.getByRole("region", { name: "최근 채팅" });
+    for (const label of ["양이 하트", "지온 최고"]) {
+      const img = preview.getByAltText(label);
+      await expect(img).toBeInViewport();
+      await expect
+        .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
+        .toBe(512);
+      expect(await img.getAttribute("src")).toMatch(
+        /\/stickers\/(yangi|jion)_\d{2}\.png$/,
+      );
+    }
+    await page.screenshot({ path: `test-results-pages/stickers-${width}.png` });
+    await page.reload();
+    await expect(
+      page.getByRole("region", { name: "최근 채팅" }).getByAltText("지온 최고"),
+    ).toBeVisible();
+    // Every original must be copied under the configured Pages base, not the domain root.
+    for (const character of ["yangi", "jion"])
+      for (let i = 1; i <= 10; i++) {
+        const response = await page.request.get(
+          `./stickers/${character}_${String(i).padStart(2, "0")}.png`,
+        );
+        expect(response.status()).toBe(200);
+        expect(response.headers()["content-type"]).toContain("image/png");
+      }
+  });
+}

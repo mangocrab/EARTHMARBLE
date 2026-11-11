@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import {
   QUICK_CHATS,
+  quickEmoji,
   totalStats,
   emptyStats,
   type Stats,
 } from "../game-social";
+import { emojiSource } from "./emojis";
 import type { Room } from "./protocol";
 export type ProfileCard = {
   id: string;
@@ -30,6 +32,13 @@ export function ChatPanel({
   command: Command;
 }) {
   const [text, setText] = useState("");
+  const [character, setCharacter] = useState("yangi");
+  const privateRoom = !room.mode || room.mode === "private";
+  const choices = (room.emojis || []).filter((e) =>
+    character === "site"
+      ? !quickEmoji(e.id)
+      : e.id.startsWith(`${character}_`) && !!quickEmoji(e.id),
+  );
   const last = (room.chat || []).findLast((m) => m.actor === meId)?.at;
   const seconds = room.isSpectator ? 5 : 3;
   const wait =
@@ -69,7 +78,7 @@ export function ChatPanel({
             {m.emoji?.url ? (
               <img
                 className="chat-emoji"
-                src={m.emoji.url}
+                src={emojiSource(m.emoji)}
                 alt={m.emoji.label}
               />
             ) : (
@@ -94,30 +103,50 @@ export function ChatPanel({
           </button>
         ))}
       </div>
-      {(!room.mode || room.mode === "private") && (
+      <div className="sticker-picker">
+        <div className="sticker-tabs" role="group" aria-label="이모티콘 캐릭터">
+          {[
+            ["yangi", "양이"],
+            ["jion", "지온"],
+            ...(privateRoom && room.emojis?.some((e) => !quickEmoji(e.id))
+              ? [["site", "사이트"]]
+              : []),
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              aria-pressed={character === id}
+              onClick={() => setCharacter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="emoji-tray" aria-label="이모티콘">
+          {choices.map((e) => (
+            <button
+              key={e.id}
+              aria-label={`${e.label} 이모티콘`}
+              disabled={locked}
+              onClick={() =>
+                command({ type: "chat", kind: "emoji", emoji: e.id })
+              }
+            >
+              {e.url ? (
+                <img
+                  className="chat-emoji"
+                  src={emojiSource(e)}
+                  alt={e.label}
+                />
+              ) : (
+                e.text
+              )}
+              <span>{e.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {privateRoom && (
         <>
-          <div
-            className="emoji-tray"
-            aria-label="이모티콘"
-            hidden={!room.emojis?.length}
-          >
-            {(room.emojis || []).map((e) => (
-              <button
-                key={e.id}
-                aria-label={`${e.label} 이모티콘`}
-                disabled={locked}
-                onClick={() =>
-                  command({ type: "chat", kind: "emoji", emoji: e.id })
-                }
-              >
-                {e.url ? (
-                  <img className="chat-emoji" src={e.url} alt={e.label} />
-                ) : (
-                  e.text
-                )}
-              </button>
-            ))}
-          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();

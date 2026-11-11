@@ -26,6 +26,7 @@ import {
   ProfilePanel,
   type ProfileCard,
 } from "./SocialPanels";
+import { emojiSource } from "./emojis";
 import { localStats, saveLocalResult } from "./stats";
 import {
   emptyStats,
@@ -2079,9 +2080,18 @@ function App() {
                   {m.spectator && <span className="spectator-badge">관전</span>}{" "}
                   <b>{m.name}</b>{" "}
                   <span>
-                    {m.emoji?.url
-                      ? `〔${m.emoji.label} 이모티콘〕`
-                      : m.emoji?.text || m.text}
+                    {m.emoji?.url ? (
+                      <>
+                        <img
+                          className="chat-preview-sticker"
+                          src={emojiSource(m.emoji)}
+                          alt={m.emoji.label}
+                        />{" "}
+                        {m.emoji.label}
+                      </>
+                    ) : (
+                      m.emoji?.text || m.text
+                    )}
                   </span>
                 </p>
               ))

@@ -118,6 +118,33 @@ test("서버 주소 없이 실제 두 브라우저가 자동 매칭된다", asyn
     await expect(B.locator(".tile")).toHaveCount(40, { timeout: 20000 });
     await expect(A.locator(".players-panel")).toContainText("매칭2");
     await expect(B.locator(".players-panel")).toContainText("매칭1");
+    await A.getByRole("button", { name: "채팅", exact: true }).click();
+    await expect(A.getByRole("textbox", { name: "채팅 메시지" })).toHaveCount(
+      0,
+    );
+    await A.getByRole("button", {
+      name: "양이 하트 이모티콘",
+      exact: true,
+    }).click();
+    const received = B.getByRole("region", { name: "최근 채팅" }).getByAltText(
+      "양이 하트",
+    );
+    await expect(received).toBeVisible();
+    await expect
+      .poll(() => received.evaluate((el: HTMLImageElement) => el.naturalWidth))
+      .toBe(512);
+    await expect(
+      A.getByRole("button", { name: "양이 하트 이모티콘", exact: true }),
+    ).toBeDisabled();
+    await B.getByRole("button", { name: "채팅", exact: true }).click();
+    await B.getByRole("button", { name: "지온", exact: true }).click();
+    await B.getByRole("button", {
+      name: "지온 최고 이모티콘",
+      exact: true,
+    }).click();
+    await expect(
+      A.getByRole("log", { name: "방 채팅" }).getByAltText("지온 최고"),
+    ).toBeVisible();
   } finally {
     await a.close();
     await b.close();
@@ -184,6 +211,8 @@ test("친구 연결이 차단돼도 같은 방에서 AI를 초대해 바로 싱�
   expect(saved.room.game.players[1].ai).toBe("easy");
   await page.reload();
   await expect(page.locator(".tile")).toHaveCount(40);
+  // Stop the deliberately rejected socket attempts before closing the routed context.
+  await page.goto("about:blank");
 });
 
 test("방장이 사람과 AI를 강퇴하면 대기실과 상대 화면에 즉시 반영된다", async ({

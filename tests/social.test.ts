@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createGame, finish, type Game } from "../game-core";
 import {
   social,
+  DEFAULT_EMOJIS,
   chat,
   result,
   emptyStats,
@@ -32,7 +33,7 @@ describe("공통 채팅 규칙", () => {
     },
   );
   it.each(["quick", "normal"] as const)(
-    "매칭 %s에서는 자유 채팅과 이모티콘을 거부한다",
+    "매칭 %s에서는 자유 채팅과 카탈로그 밖 이모티콘을 거부한다",
     (mode) => {
       const s = social({}, mode);
       expect(() =>
@@ -43,6 +44,77 @@ describe("공통 채팅 규칙", () => {
       ).toThrow("퀵채팅");
       chat(s, actor, true, { kind: "quick", quick: 1 }, 10000);
       expect(s.chat[0].spectator).toBe(true);
+    },
+  );
+  it("저장된 방에 원본 20종을 추가하고 사이트 이모티콘은 유지한다", () => {
+    const room = { social: social({}) };
+    room.social.emojis = [
+      { id: "earth", label: "지구", text: "🌍" },
+      { id: "site", label: "사이트", url: "/site-emojis/hello.png" },
+      {
+        id: "yangi_01",
+        label: "덮어쓰기",
+        url: "https://example.com/fake.png",
+      },
+    ];
+    const state = social(room);
+    expect(state.emojis).toHaveLength(21);
+    expect(state.emojis[0]).toEqual(DEFAULT_EMOJIS[0]);
+    expect(state.emojis.at(-1)?.id).toBe("site");
+    expect(social(room).emojis).toHaveLength(21);
+    expect(new Set(DEFAULT_EMOJIS.map((e) => e.id)).size).toBe(20);
+  });
+  it.each(["private", "quick", "normal"] as const)(
+    "%s 방의 참가자와 관전자가 원본 스티커를 보내며 간격을 지킨다",
+    (mode) => {
+      for (const spectator of [false, true]) {
+        const state = social({}, mode);
+        state.emojis = [
+          {
+            id: "yangi_01",
+            label: "가짜",
+            url: "https://example.com/fake.png",
+          },
+          { id: "site", label: "사이트", text: "X" },
+        ];
+        const gap = spectator ? 5000 : 3000;
+        const message = chat(
+          state,
+          actor,
+          spectator,
+          { kind: "emoji", emoji: "yangi_01" },
+          10000,
+        );
+        expect(message.emoji).toEqual(DEFAULT_EMOJIS[0]);
+        expect(message.spectator).toBe(spectator);
+        expect(() =>
+          chat(
+            state,
+            actor,
+            spectator,
+            { kind: "emoji", emoji: "jion_10" },
+            10000 + gap - 1,
+          ),
+        ).toThrow("초");
+        chat(
+          state,
+          actor,
+          spectator,
+          { kind: "emoji", emoji: "jion_10" },
+          10000 + gap,
+        );
+        expect(state.chat[1].emoji).toEqual(DEFAULT_EMOJIS[19]);
+        if (mode !== "private")
+          expect(() =>
+            chat(
+              state,
+              actor,
+              spectator,
+              { kind: "emoji", emoji: "site" },
+              10000 + gap * 2,
+            ),
+          ).toThrow("퀵채팅");
+      }
     },
   );
   it("호스트 카탈로그의 이모티콘만 사용하고 입력 길이와 카탈로그를 검사한다", () => {

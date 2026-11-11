@@ -10,7 +10,42 @@ export const QUICK_CHATS = [
   "수고하셨습니다!",
 ];
 export type Emoji = { id: string; label: string; text?: string; url?: string };
-export const DEFAULT_EMOJIS: Emoji[] = [];
+export const DEFAULT_EMOJIS: Emoji[] = [
+  ...[
+    "인사",
+    "행복",
+    "깜짝",
+    "응원",
+    "하트",
+    "울음",
+    "졸음",
+    "궁금",
+    "화남",
+    "간식",
+  ].map((label, i) => ({
+    id: `yangi_${String(i + 1).padStart(2, "0")}`,
+    label: `양이 ${label}`,
+    url: `/stickers/yangi_${String(i + 1).padStart(2, "0")}.png`,
+  })),
+  ...[
+    "인사",
+    "최고",
+    "깜짝",
+    "응원",
+    "하트",
+    "부끄러움",
+    "졸음",
+    "궁금",
+    "화남",
+    "음료",
+  ].map((label, i) => ({
+    id: `jion_${String(i + 1).padStart(2, "0")}`,
+    label: `지온 ${label}`,
+    url: `/stickers/jion_${String(i + 1).padStart(2, "0")}.png`,
+  })),
+];
+export const quickEmoji = (id: unknown) =>
+  DEFAULT_EMOJIS.find((e) => e.id === id);
 const retiredEmojis: Record<string, string> = {
   earth: "🌍",
   clap: "👏",
@@ -65,10 +100,13 @@ export function social(
       cooldowns: {},
       emojis: DEFAULT_EMOJIS.map((e) => ({ ...e })),
     };
-  // Remove the retired built-in picker items from rooms saved before this update.
-  room.social!.emojis = room.social!.emojis.filter(
-    (e) => e.url || retiredEmojis[e.id] !== e.text,
-  );
+  // Saved rooms gain the current originals; server catalog entries cannot replace them.
+  room.social!.emojis = [
+    ...DEFAULT_EMOJIS.map((e) => ({ ...e })),
+    ...room.social!.emojis.filter(
+      (e) => !quickEmoji(e.id) && (e.url || retiredEmojis[e.id] !== e.text),
+    ),
+  ];
   return room.social!;
 }
 export function socialView(s: SocialState, id: string) {
@@ -106,25 +144,26 @@ export function chat(
       throw new Error("퀵채팅을 선택하세요.");
     kind = "quick";
     text = QUICK_CHATS[Number(input.quick)];
+  } else if (input.kind === "emoji") {
+    emoji = quickEmoji(input.emoji);
+    if (s.mode !== "private" && !emoji)
+      throw new Error("매칭 게임은 퀵채팅만 사용할 수 있습니다.");
+    emoji ||= s.emojis.find((e) => e.id === input.emoji);
+    if (!emoji) throw new Error("사용할 수 없는 이모티콘입니다.");
+    kind = "emoji";
+    text = emoji.label;
   } else {
     if (s.mode !== "private")
       throw new Error("매칭 게임은 퀵채팅만 사용할 수 있습니다.");
-    if (input.kind === "emoji") {
-      emoji = s.emojis.find((e) => e.id === input.emoji);
-      if (!emoji) throw new Error("사용할 수 없는 이모티콘입니다.");
-      kind = "emoji";
-      text = emoji.label;
-    } else {
-      if (
-        input.kind !== "text" ||
-        typeof input.text !== "string" ||
-        !input.text.trim() ||
-        input.text.trim().length > 200
-      )
-        throw new Error("채팅은 1~200자로 입력하세요.");
-      kind = "text";
-      text = input.text.trim();
-    }
+    if (
+      input.kind !== "text" ||
+      typeof input.text !== "string" ||
+      !input.text.trim() ||
+      input.text.trim().length > 200
+    )
+      throw new Error("채팅은 1~200자로 입력하세요.");
+    kind = "text";
+    text = input.text.trim();
   }
   const message: ChatMessage = {
     id: crypto.randomUUID(),
