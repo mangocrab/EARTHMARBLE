@@ -547,6 +547,21 @@ function App() {
   useEffect(() => {
     if (paymentDecision) setPaymentOpen(true);
   }, [paymentDecision, g?.payment?.amount, g?.payment?.to, p?.position]);
+  const saleObscured = !!(
+    panel ||
+    selected !== null ||
+    (paymentDecision && paymentOpen) ||
+    g?.phase === "reveal" ||
+    (myTurn && g && ["purchase", "build"].includes(g.phase))
+  );
+  const [chatSeen, setChatSeen] = useState(0);
+  const lastChatAt = room?.chat?.at(-1)?.at ?? 0;
+  useEffect(() => {
+    if (panel === "chat") setChatSeen(lastChatAt);
+  }, [panel, lastChatAt]);
+  const unreadChat = (room?.chat ?? []).filter(
+    (m) => m.actor !== me?.id && m.at > chatSeen,
+  ).length;
   type SaleGhost = {
     key: string;
     tile: number;
@@ -592,13 +607,14 @@ function App() {
           });
       });
     }
-    if (removed.length) setSaleGhosts((old) => [...old, ...removed]);
+    if (removed.length)
+      setSaleGhosts((old) => [...old, ...removed].slice(-160));
   }, [g, room?.id]);
   useEffect(() => {
-    if (!saleGhosts.length) return;
-    const timer = setTimeout(() => setSaleGhosts([]), 1600);
+    if (!saleGhosts.length || saleObscured) return;
+    const timer = setTimeout(() => setSaleGhosts([]), 4200);
     return () => clearTimeout(timer);
-  }, [saleGhosts]);
+  }, [saleGhosts, saleObscured]);
   const decision = !!(myTurn && g && ["purchase", "build"].includes(g.phase));
   const lastDecision = useRef(false);
   const previousCash = useRef<Record<string, number>>({});
@@ -1227,7 +1243,11 @@ function App() {
                   )}
                   초 경과
                 </p>
-                <p className="fine">선택한 인원이 모이면 바로 시작합니다.</p>
+                <p className="fine">
+                  {state.matchMode === "quick"
+                    ? `1분 동안 상대를 찾지 못하면 어려움 AI와 시작합니다. · ${Math.max(0, 60 - Math.floor((now - (state.matchStartedAt ?? now)) / 1000))}초 남음`
+                    : "선택한 인원이 모이면 바로 시작합니다."}
+                </p>
                 {state.matchMode === "normal" &&
                   state.count >= 1 &&
                   state.count <= 2 &&
@@ -1482,107 +1502,113 @@ function App() {
             <h2>
               우리 탐사대 <small>{g.players.length}명</small>
             </h2>
-            {g.players.map((q, i) => (
-              <article
-                key={q.id}
-                className={`player ${turn?.id === q.id ? "current" : ""} ${q.bankrupt ? "bankrupt" : ""} ${isSpectator && viewId === q.id ? "watching-player" : ""}`}
-                onClick={() =>
-                  isSpectator
-                    ? command({ type: "watch", player: q.id })
-                    : void openProfile(q.id)
-                }
-              >
-                <div className="player-heading">
-                  <span className="avatar" style={{ background: colors[i] }}>
-                    {room.members.find((m) => m.id === q.id)?.profile ? (
-                      <img
-                        src={room.members.find((m) => m.id === q.id)!.profile}
-                        alt=""
-                      />
-                    ) : q.ai ? (
-                      "◇"
-                    ) : (
-                      q.name.slice(0, 1)
-                    )}
-                  </span>
-                  <b>
-                    {q.name}
-                    {q.id === me?.id && <small> 나</small>}
-                  </b>
-                  <span className="turn-marker">
-                    {q.bankrupt ? "파산" : turn?.id === q.id ? "TURN" : ""}
-                  </span>
-                </div>
-                {cashChanges
-                  .filter((c) => c.id === q.id && now - c.at < 2400)
-                  .map((c) => (
-                    <span
-                      key={c.at}
-                      className={`cash-float ${c.amount > 0 ? "gain" : "loss"}`}
-                    >
-                      {c.amount > 0 ? "+" : ""}
-                      {money(c.amount)}
-                    </span>
-                  ))}
-                <strong>
-                  {money(q.cash)}
-                  <small> 연구비</small>
-                </strong>
-                <div className="player-stats">
-                  <span>{q.laps}회 완주</span>
-                  <span>
-                    소유지{" "}
-                    {
-                      Object.values(g.estates).filter((e) => e.owner === q.id)
-                        .length
-                    }
-                  </span>
-                  <span>카드 {q.cardCount}</span>
-                </div>
-                <p
-                  className="player-last-action"
-                  title={
-                    g.lastActions?.[q.id] ??
-                    g.log.findLast(
-                      (line) =>
-                        line.startsWith(q.name + " ·") ||
-                        line.startsWith(q.name + " →"),
-                    )
+            {(g.turnOrder ?? g.players.map((_, i) => i)).map((i, order) => {
+              const q = g.players[i];
+              return (
+                <article
+                  key={q.id}
+                  className={`player ${turn?.id === q.id ? "current" : ""} ${q.bankrupt ? "bankrupt" : ""} ${isSpectator && viewId === q.id ? "watching-player" : ""}`}
+                  onClick={() =>
+                    isSpectator
+                      ? command({ type: "watch", player: q.id })
+                      : void openProfile(q.id)
                   }
                 >
-                  {g.lastActions?.[q.id] ??
-                    g.log.findLast(
-                      (line) =>
-                        line.startsWith(q.name + " ·") ||
-                        line.startsWith(q.name + " →"),
-                    ) ??
-                    "탐사 준비 중"}
-                </p>
-                {q.tide > 0 && <small>만조 · 탈출 시도 {q.tide}회 남음</small>}
-                {isSpectator && (
+                  <div className="player-heading">
+                    <span className="avatar" style={{ background: colors[i] }}>
+                      {room.members.find((m) => m.id === q.id)?.profile ? (
+                        <img
+                          src={room.members.find((m) => m.id === q.id)!.profile}
+                          alt=""
+                        />
+                      ) : q.ai ? (
+                        "◇"
+                      ) : (
+                        q.name.slice(0, 1)
+                      )}
+                    </span>
+                    <b>
+                      <small className="turn-number">{order + 1}번</small>{" "}
+                      {q.name}
+                      {q.id === me?.id && <small> 나</small>}
+                    </b>
+                    <span className="turn-marker">
+                      {q.bankrupt ? "파산" : turn?.id === q.id ? "TURN" : ""}
+                    </span>
+                  </div>
+                  {cashChanges
+                    .filter((c) => c.id === q.id && now - c.at < 2400)
+                    .map((c) => (
+                      <span
+                        key={c.at}
+                        className={`cash-float ${c.amount > 0 ? "gain" : "loss"}`}
+                      >
+                        {c.amount > 0 ? "+" : ""}
+                        {money(c.amount)}
+                      </span>
+                    ))}
+                  <strong>
+                    {money(q.cash)}
+                    <small> 연구비</small>
+                  </strong>
+                  <div className="player-stats">
+                    <span>{q.laps}회 완주</span>
+                    <span>
+                      소유지{" "}
+                      {
+                        Object.values(g.estates).filter((e) => e.owner === q.id)
+                          .length
+                      }
+                    </span>
+                    <span>카드 {q.cardCount}</span>
+                  </div>
+                  <p
+                    className="player-last-action"
+                    title={
+                      g.lastActions?.[q.id] ??
+                      g.log.findLast(
+                        (line) =>
+                          line.startsWith(q.name + " ·") ||
+                          line.startsWith(q.name + " →"),
+                      )
+                    }
+                  >
+                    {g.lastActions?.[q.id] ??
+                      g.log.findLast(
+                        (line) =>
+                          line.startsWith(q.name + " ·") ||
+                          line.startsWith(q.name + " →"),
+                      ) ??
+                      "탐사 준비 중"}
+                  </p>
+                  {q.tide > 0 && (
+                    <small>만조 · 탈출 시도 {q.tide}회 남음</small>
+                  )}
+                  {isSpectator && (
+                    <button
+                      className="watch-player"
+                      aria-label={`${q.name} 화면 관전`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        command({ type: "watch", player: q.id });
+                      }}
+                    >
+                      {viewId === q.id ? "관전 중" : "화면 보기"}
+                    </button>
+                  )}
                   <button
-                    className="watch-player"
-                    aria-label={`${q.name} 화면 관전`}
+                    className="player-profile-button"
+                    aria-label={`${q.name} 프로필`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      command({ type: "watch", player: q.id });
+                      void openProfile(q.id);
                     }}
                   >
-                    {viewId === q.id ? "관전 중" : "화면 보기"}
+                    프로필
                   </button>
-                )}
-                <button
-                  className="player-profile-button"
-                  aria-label={`${q.name} 프로필`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void openProfile(q.id);
-                  }}
-                >
-                  프로필
-                </button>
-              </article>
-            ))}
+                </article>
+              );
+            })}
             <div className="fund-panel">
               <span>♧ 자연보호기금</span>
               <strong>{money(g.fund)}</strong>
@@ -1604,7 +1630,31 @@ function App() {
               <span>
                 FIELD MAP <b>지구 탐사 지도</b>
               </span>
-              <span>시계 방향 탐사 ↻</span>
+              <div className="board-status" aria-label="게임 진행 상태">
+                <span className="action-clock" role="timer">
+                  {g.phase === "finished"
+                    ? "탐사 완료"
+                    : g.phase === "animation"
+                      ? "주사위 연출 중"
+                      : `행동 시간 ${remaining}초`}
+                </span>
+                <div className="deck-status">
+                  <div
+                    className="deck-back"
+                    role="img"
+                    aria-label="공용 탐사 카드 덱 뒷면"
+                  >
+                    <span>◉</span>
+                    <small>
+                      EARTH
+                      <br />
+                      MARBLE
+                    </small>
+                  </div>
+                  <span>공용 탐사 카드 {g.drawCount}장</span>
+                  <span>버림 {g.discardCount}장</span>
+                </div>
+              </div>
             </div>
             <div className="mobile-map-tools">
               <span>
@@ -1633,9 +1683,9 @@ function App() {
             </div>
             <div className="board-stage" ref={setMapStage}>
               <div
-                className={`board-scroll ${compact && overview ? "overview" : ""}`}
+                className={`board-scroll ${saleObscured ? "sales-obscured" : ""} ${compact && overview ? "overview" : !compact && boardPixels < 500 ? "dense-board" : ""}`}
                 style={
-                  compact && overview
+                  !compact || overview
                     ? ({
                         width: boardPixels,
                         height: boardPixels,
@@ -1664,7 +1714,7 @@ function App() {
                       owner = g.players.findIndex((q) => q.id === e?.owner);
                     return (
                       <button
-                        className={`tile z${t.zone} ${t.kind === "card" ? "card-tile" : t.id === 39 ? "bigbang-tile" : (t.kind !== "property" || !t.costs?.length) && t.id % 10 !== 0 ? "special-tile" : ""} ${t.id % 10 === 0 ? "corner" : ""} ${g.phase === "low" && myTurn && t.id !== 30 ? "travel-target" : ""}`}
+                        className={`tile ${saleGhosts.some((v) => v.tile === t.id) ? "sale-tile" : ""} z${t.zone} ${t.kind === "card" ? "card-tile" : t.id === 39 ? "bigbang-tile" : (t.kind !== "property" || !t.costs?.length) && t.id % 10 !== 0 ? "special-tile" : ""} ${t.id % 10 === 0 ? "corner" : ""} ${g.phase === "low" && myTurn && t.id !== 30 ? "travel-target" : ""}`}
                         key={t.id}
                         disabled={g.phase === "low" && myTurn && t.id === 30}
                         data-tile={t.id}
@@ -1696,6 +1746,17 @@ function App() {
                               }}
                             />
                           ))}
+                        {saleGhosts.some((v) => v.tile === t.id) && (
+                          <span
+                            className="sale-marker"
+                            key={
+                              saleGhosts.findLast((v) => v.tile === t.id)!.key
+                            }
+                            aria-label={`${t.name} 매각됨`}
+                          >
+                            매각
+                          </span>
+                        )}
                         <span className="tile-symbol">
                           {t.kind === "card"
                             ? "✦"
@@ -1799,7 +1860,9 @@ function App() {
                                   animationDuration: `${movementInterval(g.motion?.total ?? 6)}ms`,
                                 }}
                               >
-                                {i + 1}
+                                {(
+                                  g.turnOrder ?? g.players.map((_, i) => i)
+                                ).indexOf(i) + 1}
                               </span>
                             ) : null,
                           )}
@@ -1848,34 +1911,8 @@ function App() {
                         {compact && actionDock
                           ? createPortal(controls, actionDock)
                           : controls}
-                        {g.phase !== "animation" && (
-                          <div className="timer">
-                            <span
-                              style={{
-                                width: `${Math.min(100, (remaining / 60) * 100)}%`,
-                              }}
-                            />
-                            <small>행동 시간 {remaining}초</small>
-                          </div>
-                        )}
                       </>
                     )}
-                    <div className="deck-status">
-                      <div
-                        className="deck-back"
-                        role="img"
-                        aria-label="공용 탐사 카드 덱 뒷면"
-                      >
-                        <span>◉</span>
-                        <small>
-                          EARTH
-                          <br />
-                          MARBLE
-                        </small>
-                      </div>
-                      <span>공용 탐사 카드 {g.drawCount}장</span>
-                      <span>버림 {g.discardCount}장</span>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1995,14 +2032,37 @@ function App() {
       )}
       {room && (
         <section
-          className={`chat-preview ${g ? "in-game" : ""}`}
+          className={`chat-preview ${g ? "in-game" : ""} ${unreadChat ? "has-unread" : ""}`}
           aria-label="최근 채팅"
         >
           <button
             onClick={() => setPanel("chat")}
-            className="chat-preview-open"
+            className="chat-preview-open primary"
           >
-            <b>채팅</b>
+            <b>
+              <svg
+                viewBox="0 0 24 24"
+                width="19"
+                height="19"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 4h16v12H9l-5 4V4Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+              </svg>{" "}
+              채팅 열기
+              {unreadChat > 0 && (
+                <span
+                  className="chat-unread"
+                  aria-label={`안 읽은 채팅 ${unreadChat}개`}
+                >
+                  {Math.min(99, unreadChat)}
+                </span>
+              )}
+            </b>
             <span>
               {room.mode && room.mode !== "private"
                 ? "퀵채팅"
@@ -2027,7 +2087,8 @@ function App() {
               ))
             ) : (
               <p className="fine">
-                아직 채팅이 없습니다. 채팅을 눌러 인사해 보세요.
+                함께 이야기해요! 왼쪽 ‘채팅 열기’에서 인사와 퀵채팅을 보낼 수
+                있어요.
               </p>
             )}
           </div>
@@ -2152,10 +2213,10 @@ function App() {
                 )}
                 {p.cash < g.payment!.amount && (
                   <p>
-                    자동 매각은 싼 건물부터, 이후 싼 땅부터 필요한 만큼
-                    판매합니다. 파산 선언도 먼저 자동 매각하며, 납부할 수 있으면
-                    생존합니다. 그래도 부족하면 매각금을 포함한 전액을 지급하고
-                    파산합니다.
+                    자동 매각은 각 땅의 상위 건물부터, 판매 가능한 건물 중 싼
+                    순으로 팔고 이후 싼 땅부터 필요한 만큼 판매합니다. 파산
+                    선언도 먼저 자동 매각하며, 납부할 수 있으면 생존합니다.
+                    그래도 부족하면 매각금을 포함한 전액을 지급하고 파산합니다.
                   </p>
                 )}
                 <small>남은 행동 시간 {remaining}초</small>

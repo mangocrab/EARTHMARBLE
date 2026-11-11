@@ -13,15 +13,26 @@ let proc: ChildProcess,
   logs = "",
   sockets: Socket[] = [];
 async function start() {
-  proc = spawn(process.execPath, ["--import", "tsx", "game-server/index.ts"], {
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      PORT: "3197",
-      DATA_DIR: data,
+  proc = spawn(
+    process.execPath,
+    [
+      "--import",
+      "./tests/fixtures/controlled-clock.mjs",
+      "--import",
+      "tsx",
+      "game-server/index.ts",
+    ],
+    {
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        PORT: "3197",
+        EARTH_TEST_FIXED_ORDER: "true",
+        DATA_DIR: data,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   proc.stdout!.on("data", (x) => (logs += x));
   proc.stderr!.on("data", (x) => (logs += x));
   for (let i = 0; i < 100; i++) {

@@ -48,6 +48,7 @@ async function launch() {
         ...process.env,
         NODE_ENV: "production",
         PORT: "3214",
+        EARTH_TEST_FIXED_ORDER: "true",
         DATA_DIR: data,
         EARTH_TEST_CLOCK_FILE: clock,
         EMOJI_CATALOG_FILE: join(data, "emojis.json"),
@@ -345,4 +346,22 @@ it("종료 전적을 SQLite에 한 번만 저장하고 관전자·AI 싱글을 �
   advance(1001);
   await wait(() => R.state.room.game.phase === "finished");
   expect((await profile(R)).stats[2].games).toBe(0);
+});
+it("빠른게임은 60초 직전까지 기다린 뒤 어려움 AI와 시작하고 일반게임은 유지한다", async () => {
+  const A = await user("AI대기"),
+    B = await user("일반대기");
+  await ok(A, { type: "match", mode: "quick" });
+  await ok(B, { type: "match", mode: "normal" });
+  advance(59999);
+  await new Promise((r) => setTimeout(r, 300));
+  expect(A.state.matching).toBe(true);
+  expect(A.state.room).toBeNull();
+  advance(1);
+  await wait(() => !!A.state.room?.game);
+  expect(A.state.room.members).toHaveLength(2);
+  expect(A.state.room.members.find((m: any) => m.ai)?.ai).toBe("hard");
+  expect(A.state.room.mode).toBe("quick");
+  expect(A.state.room.host).toBe("");
+  expect(B.state.matching).toBe(true);
+  await ok(B, { type: "cancel" });
 });

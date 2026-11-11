@@ -1,5 +1,11 @@
 import { test, expect, type Page, type Frame } from "@playwright/test";
 async function login(p: Page | Frame, name: string) {
+  await ("addInitScript" in p ? p : p.page()).addInitScript(() => {
+    crypto.getRandomValues = ((b: Uint32Array) => {
+      b.fill(0);
+      return b;
+    }) as typeof crypto.getRandomValues;
+  });
   await p.goto("/");
   await p.getByLabel("탐사대원 닉네임").fill(name);
   await p.getByRole("button", { name: "탐사대원 등록" }).click();
@@ -405,10 +411,15 @@ test("게임 중 관전 입장·시점 전환·자유 채팅·방장 강퇴", as
     await expect(
       C.getByRole("button", { name: "전송", exact: true }),
     ).toBeDisabled();
-    await A.getByRole("button", { name: "채팅", exact: true }).click();
+    await expect(A.locator(".chat-unread")).toHaveText("1");
+    await expect(A.getByRole("region", { name: "최근 채팅" })).toContainText(
+      "잘 보고 있어요",
+    );
+    await A.getByRole("button", { name: /채팅 열기/ }).click();
     await expect(A.getByRole("log", { name: "방 채팅" })).toContainText(
       "잘 보고 있어요",
     );
+    await expect(A.locator(".chat-unread")).toHaveCount(0);
     await A.keyboard.press("Escape");
     await A.getByRole("button", { name: /관전 목록/ }).click();
     await expect(A.getByRole("dialog")).toContainText("지켜보는사람");
@@ -612,4 +623,27 @@ test("Pages 새로고침은 대기실·게임·관전 자리를 복구하고 개
   } finally {
     await Promise.all(contexts.map((c) => c.close()));
   }
+});
+
+test("빠른게임 혼자 60초 대기하면 어려움 AI와 시작한다", async ({ page }) => {
+  await page.clock.install();
+  await login(page, "AI매칭대원");
+  await page.getByRole("button", { name: "자동 매칭" }).click();
+  await page
+    .getByRole("button", { name: "빠른게임 (2인)", exact: true })
+    .click();
+  await expect(page.locator(".matching")).toContainText("대기 1명");
+  await expect(page.locator(".matching")).toContainText("어려움 AI");
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await page.clock.fastForward(55000);
+  await expect(page.locator(".tile")).toHaveCount(0);
+  await page.clock.fastForward(6000);
+  await expect(page.locator(".tile")).toHaveCount(40);
+  await expect(page.locator(".players-panel")).toContainText(
+    "지구 탐사 AI · 어려움",
+  );
+  await expect(page.locator(".player")).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: /^주사위 굴리기/ }),
+  ).toBeEnabled();
 });

@@ -224,7 +224,7 @@ test("WebGL 미지원: 2D 주사위 대체 및 움직임 줄이기", async ({ br
   await page.getByRole("button", { name: "준비 완료", exact: true }).click();
   await page.getByRole("button", { name: "탐사 시작" }).click();
   await expect(page.locator(".dice-fallback")).toBeVisible();
-  await expect(page.locator(".timer small")).toHaveText(/행동 시간 (5\d|60)초/);
+  await expect(page.getByRole("timer")).toHaveText(/행동 시간 (5\d|60)초/);
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
   await expect(page.locator(".dice-fallback")).not.toHaveClass(/shake/);
   await context.close();

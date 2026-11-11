@@ -121,6 +121,11 @@ export function validSave(value: unknown): value is Saved {
       g.players.length > 4 ||
       g.players[0].id !== v.identity.id ||
       !integer(g.turn, 0, g.players.length - 1) ||
+      (g.turnOrder !== undefined &&
+        (!Array.isArray(g.turnOrder) ||
+          g.turnOrder.length !== g.players.length ||
+          new Set(g.turnOrder).size !== g.players.length ||
+          g.turnOrder.some((i) => !integer(i, 0, g.players.length - 1)))) ||
       !phases.includes(g.phase) ||
       !integer(g.version, 0)
     )

@@ -56,6 +56,7 @@ export interface Game {
   players: Player[];
   estates: Record<number, Estate>;
   turn: number;
+  turnOrder?: number[];
   phase: Phase;
   version: number;
   dice: [number, number];
@@ -143,7 +144,7 @@ export function createGame(
     new Set(users.map((p) => p.id)).size === users.length,
     "중복 참가자입니다.",
   );
-  return {
+  const game: Game = {
     players: users.map((p) => ({
       ...p,
       cash: users.length === 2 ? 1500000 : 3000000,
@@ -176,6 +177,17 @@ export function createGame(
     deckVersion: 0,
     log: ["탐사를 시작합니다. 출발지를 통과하면 연구비 20만을 받습니다."],
   };
+  // Keep player identities/colors stable while drawing a fresh order each game.
+  const remaining = users.map((_, i) => i);
+  game.turnOrder = [];
+  while (remaining.length > 1)
+    game.turnOrder.push(remaining.splice(rng(remaining.length), 1)[0]);
+  game.turnOrder.push(remaining[0]);
+  game.turn = game.turnOrder[0];
+  game.log.push(
+    `진행 순서 · ${game.turnOrder.map((i) => users[i].name).join(" → ")}`,
+  );
+  return game;
 }
 function log(g: Game, text: string) {
   (g.lastActions ??= {})[active(g).id] = text;
@@ -236,22 +248,31 @@ export function estateValue(g: Pick<Game, "estates">, id: number) {
 export function nextSaleBuilding(g: Pick<Game, "estates">, id: number) {
   return (g.estates[id]?.buildings ?? [])
     .flatMap((built, i) => (built ? [i] : []))
-    .sort((a, b) => BOARD[id].costs![b] - BOARD[id].costs![a] || b - a)[0];
+    .sort((a, b) => b - a)[0];
 }
 export function autoSalePlan(g: Game, p: Player, required: number): Action[] {
   const owned = BOARD.filter((t) => g.estates[t.id]?.owner === p.id);
-  const buildings = owned
-    .flatMap((t) =>
-      g.estates[t.id].buildings.flatMap((b, i) =>
-        b ? [{ type: "sell", tile: t.id, building: i }] : [],
-      ),
-    )
-    .sort(
-      (a, b) =>
-        BOARD[a.tile].costs![a.building] - BOARD[b.tile].costs![b.building] ||
-        a.tile - b.tile ||
-        b.building - a.building,
-    );
+  // Only a property's highest remaining tier is eligible at each step.
+  const pending = new Map(
+    owned.map((t) => [t.id, [...g.estates[t.id].buildings]]),
+  );
+  const buildings: { type: string; tile: number; building: number }[] = [];
+  for (;;) {
+    const candidates = owned
+      .flatMap((t) => {
+        const building = pending.get(t.id)!.findLastIndex(Boolean);
+        return building < 0 ? [] : [{ type: "sell", tile: t.id, building }];
+      })
+      .sort(
+        (a, b) =>
+          BOARD[a.tile].costs![a.building] - BOARD[b.tile].costs![b.building] ||
+          a.tile - b.tile,
+      );
+    const next = candidates[0];
+    if (!next) break;
+    buildings.push(next);
+    pending.get(next.tile)![next.building] = false;
+  }
   const lands: Action[] = owned
     .sort((a, b) => a.price! - b.price! || a.id - b.id)
     .map((t) => ({ type: "sell", tile: t.id }));
@@ -269,15 +290,9 @@ export function autoSalePlan(g: Game, p: Player, required: number): Action[] {
 }
 function autoSell(g: Game, p: Player, amount: number) {
   for (const a of autoSalePlan(g, p, amount - p.cash))
-    sell(g, p, a.tile!, a.building, true);
+    sell(g, p, a.tile!, a.building);
 }
-export function sell(
-  g: Game,
-  p: Player,
-  id: number,
-  building?: number,
-  automatic = false,
-) {
+export function sell(g: Game, p: Player, id: number, building?: number) {
   const t = BOARD[id],
     e = g.estates[id];
   requireRule(e && e.owner === p.id, "자신의 소유지만 매각할 수 있습니다.");
@@ -290,7 +305,7 @@ export function sell(
       "없는 시설입니다.",
     );
     requireRule(
-      automatic || building === nextSaleBuilding(g, id),
+      building === nextSaleBuilding(g, id),
       "비싼 건물부터 순서대로 매각하세요.",
     );
     e.buildings[building] = false;
@@ -607,7 +622,8 @@ function next(g: Game, now: number) {
     return;
   }
   do {
-    g.turn = (g.turn + 1) % g.players.length;
+    const order = g.turnOrder ?? g.players.map((_, i) => i);
+    g.turn = order[(order.indexOf(g.turn) + 1) % order.length];
   } while (active(g).bankrupt);
   g.doubles = 0;
   g.extra = false;

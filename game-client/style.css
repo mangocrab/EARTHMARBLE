@@ -3654,7 +3654,7 @@ textarea {
 @media (min-width: 1191px) {
   .game-active .game-layout {
     height: calc(100dvh - 169px);
-    min-height: 450px;
+    min-height: 0;
     padding: 12px 26px;
     grid-template-columns: 205px minmax(0, 1fr) 220px;
     gap: 16px;
@@ -4283,4 +4283,302 @@ textarea {
 }
 [data-theme="dark"] .tokens span {
   color: #101114;
+}
+
+/* Timers and the physical deck have their own row, outside the map's clipped center. */
+.game-active .board-caption {
+  min-height: 38px;
+  height: auto;
+  margin: 0 0 5px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0;
+}
+.board-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.action-clock {
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.board-caption .deck-status {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.board-caption .deck-status > span {
+  display: inline;
+  white-space: nowrap;
+}
+.board-caption .deck-back {
+  width: 23px;
+  height: 32px;
+  min-height: 0;
+  padding: 1px;
+  border-width: 1px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.board-caption .deck-back > span {
+  font-size: 14px;
+}
+.board-caption .deck-back small {
+  display: none;
+}
+.chat-preview {
+  border: 2px solid var(--line);
+  box-shadow: 0 -3px 16px #0000000a;
+}
+.chat-preview-open {
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 9px;
+}
+.chat-preview-open b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+}
+.chat-preview-open span {
+  font-size: 10px;
+}
+.chat-preview-lines p {
+  font-size: 13px;
+}
+.chat-preview-lines .fine {
+  white-space: normal;
+}
+/* Keep sale ghosts paused while a decision/card covers the map. */
+.sale-owner-ghost {
+  animation: sold-owner 4s ease-out forwards;
+}
+.sale-building-ghost {
+  animation: sold-building 4s ease-out forwards;
+}
+.sale-tile {
+  animation: sale-highlight 4s ease-out forwards;
+}
+.sale-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  padding: 3px 4px;
+  border-radius: 4px;
+  background: #6b47a5;
+  color: #fff;
+  font-size: clamp(8px, 1vw, 12px);
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: sold-building 4s ease-out forwards;
+}
+.sales-obscured
+  :is(.sale-owner-ghost, .sale-building-ghost, .sale-tile, .sale-marker) {
+  animation-play-state: paused;
+}
+@keyframes sold-owner {
+  0%,
+  7% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  14% {
+    opacity: 1;
+    filter: brightness(2.5);
+  }
+  25%,
+  55% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sold-building {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sale-highlight {
+  0%,
+  55% {
+    box-shadow: inset 0 0 0 2px #a77ed5;
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+}
+@media (max-width: 1190px) {
+  .game-active .board-caption {
+    min-height: 34px;
+    margin-bottom: 0;
+  }
+  .board-caption > span {
+    display: none;
+  }
+  .board-status {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .board-caption .deck-status {
+    font-size: 10px;
+  }
+  .chat-preview-open {
+    padding: 4px 8px;
+  }
+  .chat-preview-open b {
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sale-owner-ghost,
+  .sale-building-ghost,
+  .sale-marker,
+  .sale-tile {
+    animation: none;
+  }
+}
+
+.turn-number {
+  font-size: 10px;
+  color: var(--muted);
+}
+.chat-unread {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 20px;
+  background: #de6a50;
+  color: white;
+  font-weight: 800;
+}
+.chat-preview.has-unread {
+  border-color: #aa8bcf;
+}
+[data-theme="dark"] .chat-preview-open.primary {
+  background: #8f7bc0;
+  border-color: #a18bce;
+  color: #18171e;
+}
+[data-theme="dark"] .chat-preview-open.primary :is(b, span) {
+  color: inherit;
+}
+
+.action-clock {
+  color: #34413c;
+  background: #ffffff70;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.board-caption .deck-status {
+  color: #586259;
+}
+[data-theme="dark"] .action-clock {
+  color: var(--ink);
+  background: #ffffff09;
+}
+[data-theme="dark"] .board-caption .deck-status {
+  color: #c0bdc8;
+}
+
+@media (min-width: 1191px) and (max-height: 700px) {
+  .game-active .board-center > .eyebrow {
+    display: none;
+  }
+  .game-active .board-center > h2 {
+    display: none;
+  }
+  .game-active .board-center .dice-wrap {
+    height: 90px;
+  }
+  .game-active .board-center .live-activity {
+    padding: 6px;
+    max-height: 52px;
+  }
+  .game-active .board-center .live-activity strong {
+    font-size: 11px;
+  }
+  .game-active .board-center .live-activity p {
+    font-size: 10px;
+    margin: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .game-active .board-center .turn-label {
+    margin: 0;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .game-active .board-center .live-activity p:not(:last-child) {
+    display: none;
+  }
+  .game-active .board-center .action-area button {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+}
+.dense-board .tile .tile-full-name,
+.dense-board .tile-price,
+.dense-board .tile-symbol {
+  display: none;
+}
+.dense-board .tile .tile-short-name {
+  display: inline;
+}
+.dense-board .tile b {
+  font-size: 7px;
+}
+
+@media (min-width: 1191px) {
+  .game-active .dice-wrap {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 20px;
+    width: min(240px, 100%);
+  }
+  .game-active .dice-wrap > div:first-child {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  .game-active .dice-wrap canvas {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain;
+    display: block;
+  }
+  .game-active .dice-result {
+    position: static;
+    height: 20px;
+    line-height: 20px;
+    font-size: 12px;
+  }
+  .game-active .dice-fallback {
+    bottom: 20px;
+    font-size: clamp(36px, 6vh, 65px);
+  }
 }

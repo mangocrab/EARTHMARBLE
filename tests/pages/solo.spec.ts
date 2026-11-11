@@ -1,6 +1,19 @@
 import { test, expect, type Page } from "@playwright/test";
 const KEY = "earthmarble.solo.v1";
 async function start(page: Page, count = "1") {
+  // Stable fixture order; production draws are covered by the core permutation tests.
+  await page.addInitScript(() => {
+    if (
+      Function.prototype.toString
+        .call(crypto.getRandomValues)
+        .includes("[native code]")
+    ) {
+      crypto.getRandomValues = ((b: Uint32Array) => {
+        b.fill(0);
+        return b;
+      }) as typeof crypto.getRandomValues;
+    }
+  });
   // Offline AI play must work through the unified room even without signaling.
   await page.route("https://0.peerjs.com/**", (route) => route.abort());
   await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
@@ -26,7 +39,52 @@ async function start(page: Page, count = "1") {
   await page.getByRole("button", { name: "탐사 시작" }).click();
   await expect(page.locator(".tile")).toHaveCount(40);
 }
+async function visibleStatus(page: Page) {
+  for (const selector of [
+    ".action-clock",
+    ".deck-back",
+    ".deck-status > span",
+  ]) {
+    for (const el of await page.locator(selector).all()) {
+      await expect(el).toBeInViewport();
+      expect(
+        await el.evaluate((node) => {
+          const r = node.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          return hit === node || node.contains(hit);
+        }),
+      ).toBe(true);
+    }
+  }
+  expect(
+    await page.locator(".board-status").evaluate((node) => {
+      const timer = node
+        .querySelector(".action-clock")!
+        .getBoundingClientRect();
+      const deck = node.querySelector(".deck-status")!.getBoundingClientRect();
+      return timer.right <= deck.left && timer.width > 0 && deck.width > 0;
+    }),
+  ).toBe(true);
+  expect(
+    await page.locator(".board-stage").evaluate((stage) => {
+      const available = stage.getBoundingClientRect();
+      return [...stage.querySelectorAll(".tile")].every((tile) => {
+        const r = tile.getBoundingClientRect();
+        return (
+          r.top >= available.top - 1 &&
+          r.left >= available.left - 1 &&
+          r.right <= available.right + 1 &&
+          r.bottom <= available.bottom + 1
+        );
+      });
+    }),
+  ).toBe(true);
+}
 async function wholeBoard(page: Page) {
+  await visibleStatus(page);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -243,6 +301,7 @@ async function seed(page: Page, edit: (save: any) => void) {
     (key) => JSON.parse(localStorage.getItem(key)!),
     KEY,
   );
+  save.room.game.turn = 0;
   edit(save);
   save.savedAt = Date.now();
   save.manualPaused = false;
@@ -465,7 +524,11 @@ test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 �
         };
       }, KEY),
     )
-    .toEqual({ buildings: [false, false, true], cash: 0, otherCash: 1600000 });
+    .toEqual({
+      buildings: [true, true, false],
+      cash: 25000,
+      otherCash: 1600000,
+    });
 });
 test("더블로 전 지구 탐사 카드를 뽑으면 한 바퀴 후 재추첨하고 다시 주사위를 굴린다", async ({
   page,
@@ -617,9 +680,10 @@ test("매각한 건물은 서서히, 땅의 소유 삼각형은 한 번 빛난 �
   await page.getByRole("button", { name: "종합연구센터 매각" }).click();
   const building = page.locator('[data-tile="1"] .sale-building-ghost');
   await expect(building).toHaveCount(1);
-  await expect
-    .poll(() => building.evaluate((el) => +getComputedStyle(el).opacity))
-    .toBeLessThan(0.8);
+  await expect(building).toHaveCSS("animation-play-state", "paused");
+  await page.waitForTimeout(1800);
+  await expect(building).toHaveCount(1);
+  await expect(building).toHaveCSS("opacity", "1");
   await page.getByRole("button", { name: "연구소 매각" }).click();
   await page.getByRole("button", { name: "관측소 매각" }).click();
   await page.getByRole("button", { name: "토지 매각" }).click();
@@ -630,7 +694,9 @@ test("매각한 건물은 서서히, 땅의 소유 삼각형은 한 번 빛난 �
     page.locator('[data-tile="1"] .owner-triangle:not(.sale-owner-ghost)'),
   ).toHaveCount(0);
   await page.screenshot({ path: "test-results-pages/sold-property-fade.png" });
-  await expect(owner).toHaveCount(0, { timeout: 3000 });
+  await expect(page.locator('[data-tile="1"] .sale-marker')).toBeVisible();
+  await expect(owner).toHaveCSS("animation-play-state", "running");
+  await expect(owner).toHaveCount(0, { timeout: 5500 });
   await expect(
     page.locator('[data-tile="1"] .sale-building-ghost'),
   ).toHaveCount(0);
@@ -844,9 +910,9 @@ test("파산 선언 버튼이 자동 매각으로 부족분을 채우면 파산�
     KEY,
   );
   expect(after.players[0].bankrupt).toBe(false);
-  expect(after.players[0].cash).toBe(30000);
+  expect(after.players[0].cash).toBe(55000);
   expect(after.players[1].cash).toBe(1580000);
-  expect(after.estates[1].buildings).toEqual([false, false, true]);
+  expect(after.estates[1].buildings).toEqual([true, true, false]);
   await expect(page.getByRole("dialog", { name: /최종|결과/ })).toHaveCount(0);
 });
 
@@ -950,6 +1016,8 @@ for (const [width, height] of [
   [768, 1024],
   [1024, 768],
   [1440, 900],
+  [1440, 600],
+  [1280, 720],
 ]) {
   test(`${width}×${height}: 다크모드·채팅 미리보기·설정 접근과 화면 경계`, async ({
     browser,
@@ -958,11 +1026,28 @@ for (const [width, height] of [
       page = await context.newPage();
     try {
       await start(page, "3");
+      await visibleStatus(page);
       await page.getByRole("button", { name: "설정", exact: true }).click();
       await page.getByLabel("다크모드", { exact: true }).check();
       await page.keyboard.press("Escape");
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       if (width <= 1190) await wholeBoard(page);
+      else {
+        await visibleStatus(page);
+        await expect(
+          page.getByRole("button", { name: /^주사위 굴리기/ }),
+        ).toBeInViewport();
+        await expect(page.locator(".dice-wrap canvas")).toBeVisible();
+        expect(
+          await page.locator(".dice-wrap").evaluate((wrap) => {
+            const canvas = wrap
+              .querySelector("canvas")!
+              .getBoundingClientRect();
+            const text = wrap.querySelector("output")!.getBoundingClientRect();
+            return canvas.bottom <= text.top + 1;
+          }),
+        ).toBe(true);
+      }
       expect(
         await page.locator(".header").evaluate((e) =>
           [...e.querySelectorAll("button")]
@@ -985,13 +1070,15 @@ for (const [width, height] of [
       await expect(
         page.getByRole("region", { name: "최근 채팅" }),
       ).toContainText("화면에서 바로 읽는 채팅");
-      await page.screenshot({ path: `test-results-pages/dark-${width}.png` });
+      await page.screenshot({
+        path: `test-results-pages/dark-${width}x${height}.png`,
+      });
       await page.reload();
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       await page.locator('[data-tile="1"]').click();
       await page.getByRole("button", { name: "카드 돌리기" }).click();
       await page.screenshot({
-        path: `test-results-pages/dark-card-${width}.png`,
+        path: `test-results-pages/dark-card-${width}x${height}.png`,
       });
     } finally {
       await context.close();

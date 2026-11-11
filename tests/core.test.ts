@@ -32,7 +32,7 @@ const users = [
   { id: "c", name: "화성" },
   { id: "d", name: "금성" },
 ];
-const game = (n = 2) => createGame(users.slice(0, n), start, randomInt);
+const game = (n = 2) => createGame(users.slice(0, n), start, () => 0);
 const act = (g: Game, type: string, extra = {}) => {
   apply(g, g.players[g.turn].id, { type, ...extra }, start, randomInt);
   settle(g);
@@ -609,9 +609,9 @@ it("파산 선언 전에 필요한 자산만 매각하고 납부 가능하면 �
   const before = g.players[1].cash;
   act(g, "bankrupt");
   expect(p.bankrupt).toBe(false);
-  expect(p.cash).toBe(30000);
+  expect(p.cash).toBe(55000);
   expect(g.players[1].cash).toBe(before + 80000);
-  expect(g.estates[1]).toEqual({ owner: "a", buildings: [false, false, true] });
+  expect(g.estates[1]).toEqual({ owner: "a", buildings: [true, true, false] });
   expect(g.payment).toBeUndefined();
 });
 it.each(["player", "fund"])(

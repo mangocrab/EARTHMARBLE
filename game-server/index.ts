@@ -891,6 +891,36 @@ setInterval(() => {
       broadcast(r);
     }
   }
+  const waitingQuick = queues.quick[0];
+  if (
+    queues.quick.length === 1 &&
+    now - (queuedAt.get(waitingQuick) ?? now) >= 60000
+  ) {
+    const person = db
+      .prepare(
+        "SELECT id,name,profile FROM sessions WHERE id=? ORDER BY expires DESC LIMIT 1",
+      )
+      .get(waitingQuick) as { id: string; name: string };
+    const r = newRoom(person, 2, false, 30, "");
+    r.host = "";
+    r.name = "빠른게임 탐사대";
+    r.members = [
+      { ...person, ready: true },
+      {
+        id: `ai-${randomUUID()}`,
+        name: "지구 탐사 AI · 어려움",
+        ai: "hard",
+        ready: true,
+      },
+    ];
+    social(r).mode = "quick";
+    social(r).startedAt = now;
+    r.game = createGame(r.members, now, randomInt, 30);
+    queues.quick.shift();
+    queuedAt.delete(waitingQuick);
+    broadcast(r);
+    matchedNewQueue = true;
+  }
   if (matchedNewQueue) queueState();
   if (matchAt && now >= matchAt) {
     while (queue.length >= 2) {

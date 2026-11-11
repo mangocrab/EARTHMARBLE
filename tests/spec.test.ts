@@ -225,7 +225,7 @@ describe("공개 정보 기반 AI 분석과 자산 선택", () => {
     g.payment = { amount: 250000 };
     g.estates[1] = { owner: "a", buildings: [true, true, true] };
     const plan = liquidationPlan(g, g.players[0], 250000);
-    expect(plan.slice(0, 3).map((a) => a.building)).toEqual([0, 1, 2]);
+    expect(plan.slice(0, 3).map((a) => a.building)).toEqual([2, 1, 0]);
     apply(g, "a", { type: "auto-sell" }, start, () => 0);
     expect(g.players[0].cash).toBe(250000);
     expect(g.estates[1]).toBeUndefined();

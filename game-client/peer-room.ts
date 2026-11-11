@@ -878,6 +878,19 @@ export class PeerRoomController {
     const r = this.hosted;
     if (this.dead || !r) return;
     const now = Date.now();
+    if (
+      this.matching &&
+      this.matchMode === "quick" &&
+      r.members.length === 1 &&
+      now - this.matchStartedAt >= 60000
+    ) {
+      r.members.push({
+        id: `ai-${crypto.randomUUID()}`,
+        name: "지구 탐사 AI · 어려움",
+        ai: "hard",
+        ready: true,
+      });
+    }
     if (this.matching && (r.members.length >= r.max || now >= this.matchAt)) {
       if (r.members.length >= r.max) {
         this.start();

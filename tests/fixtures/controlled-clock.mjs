@@ -10,11 +10,22 @@ if (process.env.EARTH_TEST_CLOCK_FILE)
       return realNow();
     }
   };
-if (process.env.EARTH_TEST_FIXED_DICE === "true") {
+if (
+  process.env.EARTH_TEST_FIXED_DICE === "true" ||
+  process.env.EARTH_TEST_FIXED_ORDER === "true"
+) {
   const crypto = createRequire(import.meta.url)("node:crypto"),
     original = crypto.randomInt;
   let n = 0;
-  crypto.randomInt = (...args) =>
-    args.length === 1 && args[0] === 6 ? n++ % 2 : original(...args);
+  crypto.randomInt = (...args) => {
+    if (args.length === 1 && [2, 3, 4].includes(args[0])) return 0;
+    if (
+      process.env.EARTH_TEST_FIXED_DICE === "true" &&
+      args.length === 1 &&
+      args[0] === 6
+    )
+      return n++ % 2;
+    return original(...args);
+  };
   syncBuiltinESMExports();
 }

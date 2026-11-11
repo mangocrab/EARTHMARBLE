@@ -10,12 +10,14 @@ export const QUICK_CHATS = [
   "수고하셨습니다!",
 ];
 export type Emoji = { id: string; label: string; text?: string; url?: string };
-export const DEFAULT_EMOJIS: Emoji[] = [
-  { id: "earth", label: "지구", text: "🌍" },
-  { id: "clap", label: "박수", text: "👏" },
-  { id: "dice", label: "주사위", text: "🎲" },
-  { id: "leaf", label: "새싹", text: "🌱" },
-];
+export const DEFAULT_EMOJIS: Emoji[] = [];
+const retiredEmojis: Record<string, string> = {
+  earth: "🌍",
+  clap: "👏",
+  dice: "🎲",
+  leaf: "🌱",
+};
+
 export type Spectator = {
   id: string;
   name: string;
@@ -63,6 +65,10 @@ export function social(
       cooldowns: {},
       emojis: DEFAULT_EMOJIS.map((e) => ({ ...e })),
     };
+  // Remove the retired built-in picker items from rooms saved before this update.
+  room.social!.emojis = room.social!.emojis.filter(
+    (e) => e.url || retiredEmojis[e.id] !== e.text,
+  );
   return room.social!;
 }
 export function socialView(s: SocialState, id: string) {

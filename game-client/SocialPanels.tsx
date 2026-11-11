@@ -96,7 +96,11 @@ export function ChatPanel({
       </div>
       {(!room.mode || room.mode === "private") && (
         <>
-          <div className="emoji-tray" aria-label="이모티콘">
+          <div
+            className="emoji-tray"
+            aria-label="이모티콘"
+            hidden={!room.emojis?.length}
+          >
             {(room.emojis || []).map((e) => (
               <button
                 key={e.id}
