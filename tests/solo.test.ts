@@ -256,3 +256,19 @@ it("대기실에서 나가면 방이 제거되고 새 방을 만들 수 있다",
   command(c, { type: "create", max: 4, minutes: 60, allowAI: true });
   expect(c.snapshot().room!.minutes).toBe(60);
 });
+
+it("대기실 AI를 내보내면 저장에서도 제거되고 빈 자리에 다시 초대할 수 있다", () => {
+  const { c, storage } = harness();
+  command(c, { type: "create", max: 2, minutes: 10, allowAI: true });
+  command(c, { type: "ai", difficulty: "hard" });
+  const target = c.snapshot().room!.members[1].id;
+  expect(() => command(c, { type: "kick", member: c.identity!.id })).toThrow();
+  command(c, { type: "kick", member: target });
+  expect(c.snapshot().room!.members).toHaveLength(1);
+  expect(validSave(JSON.parse(storage.getItem(SOLO_KEY)!))).toBe(true);
+  command(c, { type: "ai", difficulty: "easy" });
+  command(c, { type: "ready", ready: true });
+  command(c, { type: "start" });
+  expect(c.snapshot().room!.game!.players[1].ai).toBe("easy");
+  expect(() => command(c, { type: "kick", member: target })).toThrow();
+});

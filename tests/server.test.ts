@@ -357,3 +357,56 @@ it("4인이 모여도 조기 시작하지 않고 여러 그룹을 중복 없이 
   expect([...groups.values()].every((g) => g.length === 4)).toBe(true);
   expect(new Set([...groups.values()].flat()).size).toBe(8);
 });
+
+it("방장만 대기실 사람·AI를 강퇴하며 재입장과 중복 명령을 처리한다", async () => {
+  const a = await identity("강퇴방장"),
+    b = await identity("강퇴손님");
+  const A = await connect(a.cookie),
+    B = await connect(b.cookie);
+  expect(
+    (
+      await cmd(A.s, {
+        type: "create",
+        max: 4,
+        minutes: 10,
+        allowAI: true,
+        password: "earth",
+      })
+    ).ok,
+  ).toBe(true);
+  const code = A.states.at(-1).room.code;
+  expect((await cmd(B.s, { type: "join", code, password: "earth" })).ok).toBe(
+    true,
+  );
+  expect((await cmd(B.s, { type: "kick", member: a.id })).ok).toBe(false);
+  expect((await cmd(A.s, { type: "kick", member: a.id })).ok).toBe(false);
+  expect((await cmd(A.s, { type: "ai", difficulty: "normal" })).ok).toBe(true);
+  const bot = A.states.at(-1).room.members.find((m: any) => m.ai);
+  expect((await cmd(B.s, { type: "kick", member: bot.id })).ok).toBe(false);
+  expect((await cmd(A.s, { type: "kick", member: bot.id })).ok).toBe(true);
+  const kick = {
+    type: "kick",
+    member: b.id,
+    requestId: randomUUID(),
+    version: A.states.at(-1).room.version,
+  };
+  expect((await cmd(A.s, kick)).ok).toBe(true);
+  await until(() => B.states.at(-1)?.room === null);
+  expect((await cmd(A.s, kick)).duplicate).toBe(true);
+  expect((await cmd(B.s, { type: "join", code, password: "earth" })).ok).toBe(
+    false,
+  );
+  expect(A.states.at(-1).room.members).toHaveLength(1);
+  expect(A.states.at(-1).room.kicked).toBeUndefined();
+  await cmd(A.s, { type: "ai", difficulty: "easy" });
+  await cmd(A.s, { type: "ready" });
+  await cmd(A.s, { type: "start" });
+  expect(
+    (
+      await cmd(A.s, {
+        type: "kick",
+        member: A.states.at(-1).room.members[1].id,
+      })
+    ).ok,
+  ).toBe(false);
+});

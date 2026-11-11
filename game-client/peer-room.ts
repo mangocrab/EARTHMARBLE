@@ -111,6 +111,7 @@ export class PeerRoomController {
   private upstream?: DataConnection;
   private hosted?: HostedRoom;
   private password = "";
+  private kicked = new Set<string>();
   private peers = new Map<
     string,
     { conn: DataConnection; identity: Identity }
@@ -352,6 +353,8 @@ export class PeerRoomController {
               ? request.reject(new Error(data.error))
               : request.resolve();
           }
+        } else if (data?.type === "kicked") {
+          this.fail("방장이 대기실에서 내보냈습니다.");
         } else if (data?.type === "reject") {
           clearTimeout(timer);
           reject(new Error(data.error || "참가할 수 없습니다."));
@@ -397,6 +400,8 @@ export class PeerRoomController {
           error = "참가 정보를 확인하세요.";
         else if (data.password !== this.password)
           error = "방 비밀번호가 다릅니다.";
+        else if (this.kicked.has(p.id))
+          error = "이 방에서 강퇴되어 다시 참가할 수 없습니다.";
         else if (r.game) error = "이미 시작한 방입니다.";
         else if (r.members.length >= r.max) error = "방이 가득 찼습니다.";
         else if (r.members.some((m) => m.id === p.id))
@@ -451,7 +456,7 @@ export class PeerRoomController {
       }
     });
     c.on("close", () => {
-      if (this.dead || !identity) return;
+      if (this.dead || !identity || this.peers.get(c.peer)?.conn !== c) return;
       this.peers.delete(c.peer);
       const r = this.hosted;
       if (!r) return;
@@ -518,7 +523,22 @@ export class PeerRoomController {
         m.ready = a.ready;
       } else {
         if (actor !== r.host) throw new Error("방장만 할 수 있습니다.");
-        if (a.type === "ai") {
+        if (a.type === "kick") {
+          if (typeof a.member !== "string" || a.member === r.host)
+            throw new Error("다른 대원을 선택하세요.");
+          const member = r.members.find((m) => m.id === a.member);
+          if (!member) throw new Error("참가자를 찾을 수 없습니다.");
+          r.members = r.members.filter((m) => m.id !== member.id);
+          if (!member.ai) this.kicked.add(member.id);
+          const entry = [...this.peers.entries()].find(
+            ([, p]) => p.identity.id === member.id,
+          );
+          if (entry) {
+            this.peers.delete(entry[0]);
+            if (entry[1].conn.open) entry[1].conn.send({ type: "kicked" });
+            setTimeout(() => entry[1].conn.close(), 300);
+          }
+        } else if (a.type === "ai") {
           if (
             !r.allowAI ||
             r.members.length >= r.max ||

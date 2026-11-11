@@ -660,3 +660,175 @@ test("전용 서버 주소가 설정돼 있으면 해당 서버로 매칭을 연
   await page.getByRole("button", { name: "자동 매칭" }).click();
   await expect(page).toHaveURL("https://earth-game.example/?entry=match");
 });
+
+test("환급소 카드 양면에 적립액을 표시하고 주사위·이동 목재 소리가 실제로 재생된다", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).soundFrequencies = [];
+    const original = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function () {
+      const osc = original.call(this),
+        set = osc.frequency.setValueAtTime.bind(osc.frequency);
+      osc.frequency.setValueAtTime = (value, time) => {
+        (window as any).soundFrequencies.push(value);
+        return set(value, time);
+      };
+      return osc;
+    };
+  });
+  await start(page);
+  await seed(page, (save) => {
+    save.room.game.fund = 345000;
+  });
+  await page.locator('[data-tile="20"]').click();
+  await expect(page.locator(".deed-front .fund-total")).toContainText(
+    "345,000원",
+  );
+  await page.getByRole("button", { name: "카드 돌리기" }).click();
+  await expect(page.locator(".deed-back .fund-total")).toContainText(
+    "345,000원",
+  );
+  await page.getByRole("button", { name: "상세 카드 닫기" }).click();
+  await page.getByRole("button", { name: "주사위 굴리기" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).soundFrequencies.includes(540)),
+    )
+    .toBe(true);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          (window as any).soundFrequencies.some(
+            (f: number) => f === 420 || f === 490,
+          ),
+        ),
+      { timeout: 10000 },
+    )
+    .toBe(true);
+});
+
+test("보유 카드를 사용하면 남은 덱 순서는 유지하고 버림 더미에 넣어 저장한다", async ({
+  page,
+}) => {
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.players[0].position = 10;
+    g.players[0].tide = 3;
+    g.players[0].held = [24];
+    g.drawPile = g.drawPile.filter((c: number) => c !== 24);
+  });
+  const before = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game.drawPile,
+    KEY,
+  );
+  await page.getByRole("button", { name: /보유 카드/ }).click();
+  await page.getByRole("button", { name: "카드 사용", exact: true }).click();
+  const after = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+    KEY,
+  );
+  expect(after.drawPile).toEqual(before);
+  expect(after.discardPile).toContain(24);
+  expect(after.players[0].held).toEqual([]);
+  // A new page reads the actual save without replaying seed()'s setup script.
+  const resumed = await page.context().newPage();
+  await resumed.goto("./");
+  await expect(resumed.locator(".tile")).toHaveCount(40);
+  expect(
+    await resumed.evaluate(
+      (key) => JSON.parse(localStorage.getItem(key)!).room.game.discardPile,
+      KEY,
+    ),
+  ).toContain(24);
+  await resumed.close();
+});
+
+test("사이트 삽입 스크립트의 iframe에서 방 생성·AI 강퇴·싱글플레이가 동작한다", async ({
+  page,
+}) => {
+  await page.route("https://0.peerjs.com/**", (route) => route.abort());
+  await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
+    socket.close(),
+  );
+  await page.goto("./embed-example.html");
+  const game = page.frameLocator("#earth-marble iframe");
+  await game.getByLabel("탐사대원 닉네임").fill("사이트 대원");
+  await game.getByRole("button", { name: "탐사대원 등록" }).click();
+  await game.getByRole("button", { name: "방 만들기" }).click();
+  await game.getByRole("button", { name: "탐사대 만들기" }).click();
+  await game.getByRole("button", { name: "AI 초대", exact: true }).click();
+  await game.getByRole("button", { name: /탐사봇.*내보내기/ }).click();
+  await expect(
+    game.locator(".crew-list article").filter({ hasText: "AI ·" }),
+  ).toHaveCount(0);
+  await game.getByRole("button", { name: "AI 초대", exact: true }).click();
+  await game.getByRole("button", { name: "준비 완료", exact: true }).click();
+  await game.getByRole("button", { name: "탐사 시작" }).click();
+  await expect(game.locator(".tile")).toHaveCount(40);
+  await expect(
+    game.getByRole("button", { name: "주사위 굴리기" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("파산 선언 버튼이 자동 매각으로 부족분을 채우면 파산시키지 않는다", async ({
+  page,
+}) => {
+  await start(page);
+  await seed(page, (save) => {
+    const g = save.room.game,
+      p = g.players[0];
+    p.cash = 10000;
+    g.phase = "toll";
+    g.payment = { amount: 80000, to: g.players[1].id, toll: true };
+    g.estates[1] = { owner: p.id, buildings: [true, true, true] };
+  });
+  await page.getByRole("button", { name: "파산 선언", exact: true }).click();
+  const after = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+    KEY,
+  );
+  expect(after.players[0].bankrupt).toBe(false);
+  expect(after.players[0].cash).toBe(30000);
+  expect(after.players[1].cash).toBe(1580000);
+  expect(after.estates[1].buildings).toEqual([false, false, true]);
+  await expect(page.getByRole("dialog", { name: /최종|결과/ })).toHaveCount(0);
+});
+
+test("사이트 삽입 환경이 저장소 접근을 차단해도 현재 AI 게임은 플레이할 수 있다", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("Storage blocked", "SecurityError");
+      },
+    }),
+  );
+  await page.route("https://0.peerjs.com/**", (route) => route.abort());
+  await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
+    socket.close(),
+  );
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("./embed-example.html");
+  const game = page.frameLocator("#earth-marble iframe");
+  await game.getByLabel("탐사대원 닉네임").fill("임시 대원");
+  await game.getByRole("button", { name: "탐사대원 등록" }).click();
+  await game.getByRole("button", { name: "방 만들기" }).click();
+  await game.getByRole("button", { name: "탐사대 만들기" }).click();
+  await game.getByRole("button", { name: "AI 초대", exact: true }).click();
+  await game.getByRole("button", { name: "준비 완료", exact: true }).click();
+  await game.getByRole("button", { name: "탐사 시작" }).click();
+  await expect(game.locator(".tile")).toHaveCount(40);
+  await game.getByRole("button", { name: "주사위 굴리기" }).click();
+  await expect(game.locator(".live-activity")).toContainText("주사위");
+  expect(errors).toEqual([]);
+});

@@ -3261,6 +3261,7 @@ small {
 }
 .sound-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
@@ -3287,4 +3288,18 @@ small {
     flex-wrap: wrap;
     gap: 8px;
   }
+}
+
+.kick-member {
+  margin-top: 10px;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.fund-total {
+  margin: 14px 0;
+}
+.fund-total p {
+  font-size: 12px;
+  font-weight: normal;
+  margin: 8px 0 0;
 }

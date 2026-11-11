@@ -47,6 +47,7 @@ interface Room {
   allowAI: boolean;
   minutes: number;
   password?: string;
+  kicked?: string[];
   members: Member[];
   game?: Game;
   requests: Record<string, boolean>;
@@ -385,7 +386,7 @@ io.on("connection", (socket) => {
       }
       const r = findRoom(user.id);
       if (
-        ["ready", "ai", "start", "leave"].includes(a.type) &&
+        ["ready", "ai", "kick", "start", "leave"].includes(a.type) &&
         r &&
         a.version !== r.version
       )
@@ -436,6 +437,8 @@ io.on("connection", (socket) => {
         );
         if (!target || target.game || target.members.length >= target.max)
           throw new Error("입장할 수 없는 방입니다.");
+        if (target.kicked?.includes(user.id))
+          throw new Error("이 방에서 강퇴되어 다시 참가할 수 없습니다.");
         if (
           typeof a.password !== "string" ||
           a.password.length > 64 ||
@@ -466,6 +469,28 @@ io.on("connection", (socket) => {
             throw new Error("준비 상태가 필요합니다.");
           m.ready = a.ready;
           roomChanged(r);
+        } else if (a.type === "kick") {
+          if (
+            r.game ||
+            r.host !== user.id ||
+            typeof a.member !== "string" ||
+            a.member === r.host
+          )
+            throw new Error(
+              "대기실에서 방장만 다른 대원을 내보낼 수 있습니다.",
+            );
+          const target = r.members.find((m) => m.id === a.member);
+          if (!target) throw new Error("참가자를 찾을 수 없습니다.");
+          r.members = r.members.filter((m) => m.id !== target.id);
+          if (!target.ai) (r.kicked ??= []).push(target.id);
+          roomChanged(r);
+          if (!target.ai) {
+            send(target.id);
+            io.to("user:" + target.id).emit(
+              "kicked",
+              "방장이 대기실에서 내보냈습니다.",
+            );
+          }
         } else if (a.type === "ai") {
           if (
             r.game ||

@@ -147,15 +147,25 @@ describe("30장 카드의 정확한 결과", () => {
       ].sort((a, b) => a - b),
     ).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
   });
-  it.each([0, 14, 29])("소모품이 남은 덱의 %i 위치에 반환된다", (index) => {
-    const g = create();
-    g.players[0].held = [24];
-    g.players[0].tide = 3;
-    g.drawPile = g.drawPile.filter((id) => id !== 24);
-    apply(g, "a", { type: "use", card: 24 }, start, () => index);
-    expect(g.drawPile.indexOf(24)).toBe(index);
-    expect(new Set(g.drawPile).size).toBe(30);
-  });
+  it.each([0, 9, 19])(
+    "보관 카드 사용은 덱 순서를 유지하고 버림 더미로 보낸다 (회전 %i)",
+    (offset) => {
+      const g = create();
+      g.players[0].held = [24];
+      g.players[0].tide = 3;
+      g.drawPile = g.drawPile.filter((id) => id !== 24);
+      g.drawPile = [
+        ...g.drawPile.slice(offset),
+        ...g.drawPile.slice(0, offset),
+      ];
+      const order = [...g.drawPile];
+      apply(g, "a", { type: "use", card: 24 }, start, () => 0);
+      expect(g.drawPile).toEqual(order);
+      expect(g.discardPile).toEqual([24]);
+      expect(g.players[0].held).toEqual([]);
+      expect(new Set([...g.drawPile, ...g.discardPile]).size).toBe(30);
+    },
+  );
 });
 describe("공개 정보 기반 AI 분석과 자산 선택", () => {
   it("2d6의 각 합계 확률을 사용한다", () => {

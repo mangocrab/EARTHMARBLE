@@ -66,6 +66,20 @@ function Globe() {
     </svg>
   );
 }
+function readSetting(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeSetting(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* Keep this session usable. */
+  }
+}
 function App() {
   const [me, setMe] = useState<{ id: string; name: string } | null>(null),
     [loading, setLoading] = useState(true),
@@ -83,7 +97,7 @@ function App() {
     [now, setNow] = useState(Date.now()),
     [reduced, setReduced] = useState(
       () =>
-        localStorage.getItem("earth-reduced") === "true" ||
+        readSetting("earth-reduced") === "true" ||
         matchMedia("(prefers-reduced-motion: reduce)").matches,
     ),
     [busy, setBusy] = useState(false);
@@ -95,7 +109,7 @@ function App() {
   const [volume, updateVolume] = useState(getVolume);
   const [serverURL, setServerURL] = useState(
     () =>
-      localStorage.getItem("earth-server-url") ??
+      readSetting("earth-server-url") ??
       import.meta.env.VITE_GAME_SERVER_URL ??
       "",
   );
@@ -189,6 +203,7 @@ function App() {
     s.on("connect", () => setConnected(true));
     s.on("disconnect", () => setConnected(false));
     s.on("connect_error", (e) => setError(e.message));
+    s.on("kicked", (message: string) => setError(message));
     s.on("state", (snapshot: State & { serverNow: number }) => {
       clockOffset.current = snapshot.serverNow - Date.now();
       setNow(snapshot.serverNow);
@@ -263,6 +278,14 @@ function App() {
     }
     if (g.version === before.version) return;
     const last = g.log.at(-1) ?? "";
+    if (
+      g.phase === "animation" &&
+      (before.phase !== "animation" ||
+        g.animationUntil !== before.animationUntil)
+    )
+      playSound("roll");
+    if (g.players.some((q, i) => q.position !== before.players[i]?.position))
+      playSound("step");
     if (g.phase === "finished" && before.phase !== "finished")
       playSound("finish");
     else if (
@@ -270,8 +293,6 @@ function App() {
       (before.phase !== "reveal" || g.pendingCard !== before.pendingCard)
     )
       playSound("card");
-    else if (g.phase === "animation" && before.phase !== "animation")
-      playSound("roll");
     else if (last !== before.log.at(-1) && last.includes(" 건설 ("))
       playSound("build");
     else if (last !== before.log.at(-1) && last.includes(" 구매 ("))
@@ -285,10 +306,6 @@ function App() {
           ? "gain"
           : "spend",
       );
-    else if (
-      g.players.some((q, i) => q.position !== before.players[i]?.position)
-    )
-      playSound("step");
     else if (myTurn && g.turn !== before.turn) playSound("turn");
   }, [g, myTurn, p]);
   const [drawOrigin, setDrawOrigin] = useState<React.CSSProperties>({});
@@ -1060,6 +1077,16 @@ function App() {
                 <b className={m.ready ? "ready" : ""}>
                   {m.ready ? "준비 완료" : "준비 중"}
                 </b>
+                {room.host === me?.id && m.id !== room.host && (
+                  <button
+                    className="kick-member"
+                    aria-label={`${m.name} 내보내기`}
+                    disabled={busy}
+                    onClick={() => command({ type: "kick", member: m.id })}
+                  >
+                    내보내기
+                  </button>
+                )}
               </article>
             ))}
             {Array.from({ length: room.max - room.members.length }, (_, i) => (
@@ -1721,7 +1748,9 @@ function App() {
                 {p.cash < g.payment!.amount && (
                   <p>
                     자동 매각은 싼 건물부터, 이후 싼 땅부터 필요한 만큼
-                    판매합니다.
+                    판매합니다. 파산 선언도 먼저 자동 매각하며, 납부할 수 있으면
+                    생존합니다. 그래도 부족하면 매각금을 포함한 전액을 지급하고
+                    파산합니다.
                   </p>
                 )}
                 <small>남은 행동 시간 {remaining}초</small>
@@ -1803,7 +1832,7 @@ function App() {
                     value={serverURL}
                     onChange={(e) => {
                       setServerURL(e.target.value);
-                      localStorage.setItem("earth-server-url", e.target.value);
+                      writeSetting("earth-server-url", e.target.value);
                     }}
                   />
                 </label>
@@ -1955,10 +1984,7 @@ function App() {
                     checked={reduced}
                     onChange={(e) => {
                       setReduced(e.target.checked);
-                      localStorage.setItem(
-                        "earth-reduced",
-                        String(e.target.checked),
-                      );
+                      writeSetting("earth-reduced", String(e.target.checked));
                     }}
                   />{" "}
                   움직임 줄이기 (주사위·카드 회전)
@@ -1982,6 +2008,10 @@ function App() {
                   <button onClick={() => playSound("gain")}>
                     효과음 미리듣기
                   </button>
+                  <button onClick={() => playSound("roll")}>주사위 소리</button>
+                  <button onClick={() => playSound("step")}>
+                    말 이동 소리
+                  </button>
                   <button
                     onClick={() => {
                       const v = volume === 0 ? 0.4 : 0;
@@ -2001,10 +2031,7 @@ function App() {
                       value={serverURL}
                       onChange={(e) => {
                         setServerURL(e.target.value);
-                        localStorage.setItem(
-                          "earth-server-url",
-                          e.target.value,
-                        );
+                        writeSetting("earth-server-url", e.target.value);
                       }}
                     />
                     <small>
@@ -2072,7 +2099,8 @@ function App() {
                     </p>
                     <p>{CARDS[id - 1].science}</p>
                     <p>
-                      {CARDS[id - 1].effect} · 사용 후 공용 덱으로 돌아갑니다.
+                      {CARDS[id - 1].effect} · 사용 후 버림 더미로 이동합니다.
+                      덱이 소진되면 함께 섞입니다.
                     </p>
                     <button
                       disabled={
@@ -2292,6 +2320,16 @@ function App() {
                   <div className="deed-art">
                     <PropertyArt id={selected} />
                   </div>
+                  {BOARD[selected].kind === "refund" && g && (
+                    <div
+                      className="deed-total fund-total"
+                      aria-label="현재 자연보호기금 적립액"
+                    >
+                      <small>현재 모인 자연보호기금</small>
+                      <strong>{money(g.fund)}원</strong>
+                      <p>이 칸에 도착하면 적립액 전액을 받습니다.</p>
+                    </div>
+                  )}
                   {BOARD[selected].price && (
                     <div className="front-prices">
                       <b>땅 구매 {money(BOARD[selected].price!)}원</b>
@@ -2429,6 +2467,15 @@ function App() {
                           </div>
                         )}
                     </>
+                  ) : BOARD[selected].kind === "refund" && g ? (
+                    <div
+                      className="deed-total fund-total"
+                      aria-label="현재 자연보호기금 적립액"
+                    >
+                      <small>현재 모인 자연보호기금</small>
+                      <strong>{money(g.fund)}원</strong>
+                      <p>도착 시 전액 환급 · 지급 후 적립액 0원</p>
+                    </div>
                   ) : (
                     <p>특수 칸입니다. 앞면에서 효과를 확인하세요.</p>
                   )}

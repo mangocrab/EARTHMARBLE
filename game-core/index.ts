@@ -207,8 +207,8 @@ export function assets(g: Game, p: Player) {
     )
   );
 }
-function returnCard(g: Game, id: number, rng: Random) {
-  g.drawPile.splice(rng(g.drawPile.length + 1), 0, id);
+function returnCard(g: Game, id: number) {
+  g.discardPile.push(id);
   g.deckVersion++;
 }
 export function finish(g: Game) {
@@ -303,12 +303,20 @@ export function sell(
     log(g, `${p.name} · ${t.name} 매각`);
   }
 }
-function bankrupt(g: Game, p: Player, rng: Random) {
+function resolveInsolvency(g: Game, p: Player, now: number, rng: Random) {
+  const due = g.payment!.amount;
+  autoSell(g, p, due);
+  if (p.cash >= due) {
+    log(g, `${p.name} · 자동 매각으로 부족분을 충당하여 파산을 취소했습니다.`);
+    completePayment(g, now, rng);
+  } else bankrupt(g, p);
+}
+function bankrupt(g: Game, p: Player) {
   p.bankrupt = true;
   p.freeLow = false;
   for (const [id, e] of Object.entries(g.estates))
     if (e.owner === p.id) delete g.estates[+id];
-  for (const id of p.held) returnCard(g, id, rng);
+  for (const id of p.held) returnCard(g, id);
   p.held = [];
   if (g.payment) {
     const amount = Math.max(0, p.cash);
@@ -319,7 +327,10 @@ function bankrupt(g: Game, p: Player, rng: Random) {
   }
   p.cash = 0;
   g.payment = undefined;
-  log(g, `${p.name} 파산 · 소유지를 은행에 반환했습니다.`);
+  log(
+    g,
+    `${p.name} 파산 · 자산을 모두 매각하고 남은 연구비를 전액 지급했습니다.`,
+  );
   g.phase = "end";
   g.extra = false;
   checkWinner(g);
@@ -663,7 +674,7 @@ function performAction(
       "정산 중에만 파산할 수 있습니다.",
     );
     requireRule(p.cash < g.payment!.amount, "연구비로 정산할 수 있습니다.");
-    bankrupt(g, p, rng);
+    resolveInsolvency(g, p, now, rng);
     return;
   }
   if (a.type === "use") {
@@ -686,7 +697,7 @@ function performAction(
       else stop(g);
     }
     p.held.splice(p.held.indexOf(a.card!), 1);
-    returnCard(g, a.card!, rng);
+    returnCard(g, a.card!);
     return;
   }
   switch (a.type) {
@@ -879,11 +890,7 @@ export function tick(g: Game, now: number, rng: Random) {
       performAction(g, p.id, { type: "roll" }, now, rng);
     else if (g.payment) {
       if (p.cash >= g.payment.amount) completePayment(g, now, rng);
-      else {
-        autoSell(g, p, g.payment.amount);
-        if (p.cash >= g.payment.amount) completePayment(g, now, rng);
-        else bankrupt(g, p, rng);
-      }
+      else resolveInsolvency(g, p, now, rng);
     }
     return true;
   }

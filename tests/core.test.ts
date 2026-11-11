@@ -336,7 +336,8 @@ describe("만조·간조·타이머·파산", () => {
     act(g, "bankrupt");
     expect(g.estates[1]).toBeUndefined();
     expect(g.players[0].bankrupt).toBe(true);
-    expect(g.players[1].cash).toBe(1500000);
+    expect(g.players[1].cash).toBe(1550000);
+    expect(g.discardPile).toEqual(expect.arrayContaining([24, 25]));
     expect(g.winner).toEqual(["b"]);
     expect(count(g).sort((a, b) => a - b)).toEqual(CARDS.map((c) => c.id));
   });
@@ -570,3 +571,72 @@ it("중지 시각이 없는 기존 주사위 스냅샷도 복구한다", () => {
   tick(g, start + 61400, randomInt);
   expect(remainingMs(g, start + 61880)).toBe(1000);
 });
+
+it.each([24, 25])(
+  "사용한 %i번 카드는 버려지고 덱 소진 후에만 다시 뽑힌다",
+  (id) => {
+    const g = game(),
+      p = g.players[0];
+    p.held = [id];
+    g.drawPile = g.drawPile.filter((c) => c !== id);
+    if (id === 24) p.tide = 3;
+    else {
+      p.position = 1;
+      g.estates[1] = { owner: "b", buildings: [false, false, false] };
+      land(g, start, randomInt);
+    }
+    const order = [...g.drawPile];
+    act(g, "use", { card: id });
+    expect(g.drawPile).toEqual(order);
+    expect(g.discardPile).toContain(id);
+    expect(p.held).toEqual([]);
+    expect(count(g).sort((a, b) => a - b)).toEqual(CARDS.map((c) => c.id));
+    const drawn = order.map(() => draw(g, () => 0));
+    expect(drawn).not.toContain(id);
+    g.discardPile.push(...(drawn as number[]));
+    const nextDeck = Array.from({ length: 30 }, () => draw(g, () => 0));
+    expect(nextDeck.sort((a, b) => a! - b!)).toEqual(CARDS.map((c) => c.id));
+  },
+);
+
+it("파산 선언 전에 필요한 자산만 매각하고 납부 가능하면 생존한다", () => {
+  const g = game(),
+    p = g.players[0];
+  p.cash = 10000;
+  g.phase = "toll";
+  g.payment = { amount: 80000, to: "b", toll: true };
+  g.estates[1] = { owner: "a", buildings: [true, true, true] };
+  const before = g.players[1].cash;
+  act(g, "bankrupt");
+  expect(p.bankrupt).toBe(false);
+  expect(p.cash).toBe(30000);
+  expect(g.players[1].cash).toBe(before + 80000);
+  expect(g.estates[1]).toEqual({ owner: "a", buildings: [false, false, true] });
+  expect(g.payment).toBeUndefined();
+});
+it.each(["player", "fund"])(
+  "매각 후에도 부족하면 현금·모든 매각금을 %s에 지급하고 파산한다",
+  (target) => {
+    const g = game(),
+      p = g.players[0];
+    p.cash = 10000;
+    g.phase = target === "player" ? "toll" : "debt";
+    g.payment = {
+      amount: 1000000,
+      ...(target === "player" ? { to: "b", toll: true } : { fund: true }),
+    };
+    g.estates[1] = { owner: "a", buildings: [true, true, true] };
+    g.estates[3] = { owner: "a", buildings: [false, false, false] };
+    const creditor = g.players[1].cash;
+    act(g, "bankrupt");
+    // 10,000 cash + 225,000 facilities + 25,000 land + 40,000 land.
+    expect(p.bankrupt).toBe(true);
+    expect(p.cash).toBe(0);
+    expect(g.estates[1]).toBeUndefined();
+    expect(g.estates[3]).toBeUndefined();
+    expect(g.players[1].cash).toBe(
+      creditor + (target === "player" ? 300000 : 0),
+    );
+    expect(g.fund).toBe(target === "fund" ? 300000 : 0);
+  },
+);

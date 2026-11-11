@@ -417,6 +417,10 @@ export class SoloController {
           ai: a.difficulty as string,
           ready: true,
         });
+      } else if (a.type === "kick") {
+        const member = l.members.find((m) => m.id === a.member);
+        if (!member?.ai) throw new Error("내보낼 AI를 선택하세요.");
+        l.members = l.members.filter((m) => m.id !== member.id);
       } else if (a.type === "ready") {
         if (typeof a.ready !== "boolean")
           throw new Error("준비 상태를 확인하세요.");
