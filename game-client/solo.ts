@@ -11,6 +11,7 @@ import {
   type Action,
 } from "../game-core";
 import { decide } from "../game-ai";
+import { social, socialView, chat, type SocialState } from "../game-social";
 import type { Snapshot, Room } from "./protocol";
 export const SOLO_KEY = "earthmarble.solo.v1";
 export interface Store {
@@ -19,8 +20,14 @@ export interface Store {
   removeItem(key: string): void;
 }
 type Identity = { id: string; name: string };
-type LocalRoom = { id: string; version: number; minutes: number; game: Game };
-type Lounge = Omit<Room, "game">;
+type LocalRoom = {
+  id: string;
+  version: number;
+  minutes: number;
+  game: Game;
+  social?: SocialState;
+};
+type Lounge = Omit<Room, "game"> & { social?: SocialState };
 type Saved = {
   lounge?: Lounge | null;
   schema: 1;
@@ -307,10 +314,14 @@ export class SoloController {
                 ai: p.ai,
                 ready: true,
               })),
+              ...socialView(social(r), id),
               game,
             }
           : this.lounge
-            ? structuredClone(this.lounge)
+            ? {
+                ...structuredClone(this.lounge),
+                ...socialView(social(this.lounge), id),
+              }
             : null,
       matching: false,
       count: 0,
@@ -381,6 +392,15 @@ export class SoloController {
       throw new Error("잘못된 요청입니다.");
     if (this.requests.has(a.requestId)) return;
     const now = this.now();
+    if (a.type === "chat") {
+      const target = this.room || this.lounge;
+      if (!target) throw new Error("방에 먼저 참가하세요.");
+      chat(social(target), this.identity, false, a, now);
+      this.requests.add(a.requestId);
+      this.save();
+      this.emit();
+      return;
+    }
     if (a.type === "create") {
       if (this.room || this.lounge || a.version !== 0)
         throw new Error("현재 방을 먼저 나가세요.");

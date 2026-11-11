@@ -857,3 +857,42 @@ test("방 목록은 코드 입력 없이 열리며 연결 실패를 가짜 목�
   await page.getByRole("button", { name: "탐사대 만들기" }).click();
   await expect(page.locator(".waiting h1")).toHaveText("목록대원님의 방");
 });
+
+test("기기 임시 프로필은 전체·최다 인원전과 2·3·4인 상세 승패를 표시한다", async ({
+  page,
+}) => {
+  await start(page);
+  const id = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("earthmarble.solo.v1")!).identity.id,
+  );
+  await page.evaluate(
+    (id) =>
+      localStorage.setItem(
+        `earth-records:${id}`,
+        JSON.stringify({
+          stats: {
+            2: { games: 4, wins: 3, losses: 1 },
+            3: { games: 2, wins: 1, losses: 1 },
+            4: { games: 6, wins: 4, losses: 2 },
+          },
+          games: [],
+        }),
+      ),
+    id,
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "내 프로필과 전적", exact: true })
+    .click();
+  await expect(page.locator(".profile-card")).toContainText("전체 12판");
+  await expect(page.locator(".profile-card")).toContainText(
+    "8승 · 4패 · 승률 66.7%",
+  );
+  await expect(page.locator(".profile-card")).toContainText(
+    "4인전 · 6판 (4승 2패)",
+  );
+  await page.getByRole("button", { name: "상세보기", exact: true }).click();
+  await expect(page.locator(".records-table tbody tr")).toHaveCount(4);
+});

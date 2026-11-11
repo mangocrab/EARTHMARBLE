@@ -98,20 +98,16 @@ test("서버 주소 없이 실제 두 브라우저가 자동 매칭된다", asyn
     await login(A, "매칭1");
     await login(B, "매칭2");
     await A.getByRole("button", { name: "자동 매칭" }).click();
+    await A.getByRole("button", {
+      name: "빠른게임 (2인)",
+      exact: true,
+    }).click();
     await expect(A.locator(".matching")).toBeVisible();
     await B.getByRole("button", { name: "자동 매칭" }).click();
-    await expect
-      .poll(
-        async () =>
-          (await A.locator(".tile").count()) === 40 ||
-          (
-            await A.locator(".matching")
-              .textContent()
-              .catch(() => "")
-          )?.includes("대기 2명"),
-        { timeout: 25000 },
-      )
-      .toBeTruthy();
+    await B.getByRole("button", {
+      name: "빠른게임 (2인)",
+      exact: true,
+    }).click();
     await expect(A.locator(".tile")).toHaveCount(40, { timeout: 20000 });
     await expect(B.locator(".tile")).toHaveCount(40, { timeout: 20000 });
     await expect(A.locator(".players-panel")).toContainText("매칭2");
@@ -147,6 +143,9 @@ test("온라인 방에 AI만 초대해 시작하면 저장되는 싱글플레이
 test("매칭 취소 후 다른 싱글플레이 방을 만들 수 있다", async ({ page }) => {
   await login(page, "취소대원");
   await page.getByRole("button", { name: "자동 매칭" }).click();
+  await page
+    .getByRole("button", { name: "빠른게임 (2인)", exact: true })
+    .click();
   await expect(page.locator(".matching")).toBeVisible();
   await page.getByRole("button", { name: "매칭 취소" }).click();
   await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
@@ -215,7 +214,7 @@ test("방장이 사람과 AI를 강퇴하면 대기실과 상대 화면에 즉�
     }).click();
     await expect(B.getByRole("button", { name: "방 만들기" })).toBeVisible();
     await expect(B.getByRole("alert")).toContainText(
-      "방장이 대기실에서 내보냈습니다",
+      "방장이 방에서 내보냈습니다",
     );
     await B.getByRole("button", { name: "방 참가하기" }).click();
     await B.getByRole("button", {
@@ -278,9 +277,14 @@ test("열린 방 목록은 새 방·정원·AI 변경·시작을 실시간으로
     await C.getByRole("button", { name: "준비 완료", exact: true }).click();
     await A.getByRole("button", { name: "탐사 시작" }).click();
     await expect(observer).toHaveCount(0, { timeout: 25000 });
-    await expect(B.getByRole("status")).toContainText("열린 방이 없습니다", {
-      timeout: 25000,
+    const playing = B.getByRole("button", {
+      name: "목록방장님의 방 관전",
+      exact: true,
     });
+    await expect(playing).toBeVisible();
+    await expect(playing).toContainText("게임 중");
+    await expect(playing).toContainText("목록손님");
+    await expect(playing).toContainText("분 경과");
   } finally {
     await a.close();
     await b.close();
@@ -328,5 +332,176 @@ test("목록을 중계하던 방장이 나가도 다른 열린 방은 다시 목
     await a.close();
     await b.close();
     await c.close();
+  }
+});
+
+test("게임 중 관전 입장·시점 전환·자유 채팅·방장 강퇴", async ({ browser }) => {
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const [A, B, C] = await Promise.all(contexts.map((c) => c.newPage()));
+  try {
+    await login(A, "관전방장");
+    await login(B, "관전대원");
+    await login(C, "지켜보는사람");
+    await A.getByRole("button", { name: "방 만들기" }).click();
+    await A.getByLabel("최대 인원").selectOption("2");
+    await A.getByRole("button", { name: "탐사대 만들기" }).click();
+    await B.getByRole("button", { name: "방 참가하기" }).click();
+    await B.getByRole("button", {
+      name: "관전방장님의 방 참가",
+      exact: true,
+    }).click({ timeout: 20000 });
+    for (const P of [A, B])
+      await P.getByRole("button", { name: "준비 완료", exact: true }).click();
+    await A.getByRole("button", { name: "탐사 시작" }).click();
+    await C.getByRole("button", { name: "방 참가하기" }).click();
+    const row = C.getByRole("button", {
+      name: "관전방장님의 방 관전",
+      exact: true,
+    });
+    await expect(row).toContainText("게임 중", { timeout: 20000 });
+    await expect(row).toContainText("관전대원");
+    await expect(row).toContainText("분 경과");
+    await row.click();
+    await expect(C.locator(".tile")).toHaveCount(40);
+    await C.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        C.locator(".board-scroll").evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          return (
+            r.left >= 0 &&
+            r.right <= innerWidth + 1 &&
+            r.top >= 0 &&
+            r.bottom <= innerHeight + 1
+          );
+        }),
+      )
+      .toBe(true);
+    await expect(C.getByRole("button", { name: "주사위 굴리기" })).toHaveCount(
+      0,
+    );
+    await expect(C.locator(".watching-player")).toContainText("관전방장");
+    await C.getByRole("button", {
+      name: "관전대원 화면 관전",
+      exact: true,
+    }).click();
+    await expect(C.locator(".watching-player")).toContainText("관전대원");
+    await C.screenshot({ path: "test-results-peer/spectator-mobile.png" });
+    await C.getByRole("button", { name: "채팅", exact: true }).click();
+    await C.getByRole("textbox", { name: "채팅 메시지" }).fill(
+      "잘 보고 있어요",
+    );
+    await C.getByRole("button", { name: "전송", exact: true }).click();
+    await expect(C.locator(".spectator-message")).toContainText("관전");
+    await expect(
+      C.getByRole("button", { name: "전송", exact: true }),
+    ).toBeDisabled();
+    await A.getByRole("button", { name: "채팅", exact: true }).click();
+    await expect(A.getByRole("log", { name: "방 채팅" })).toContainText(
+      "잘 보고 있어요",
+    );
+    await A.keyboard.press("Escape");
+    await A.getByRole("button", { name: /관전 목록/ }).click();
+    await expect(A.getByRole("dialog")).toContainText("지켜보는사람");
+    await A.getByRole("button", {
+      name: "지켜보는사람 관전 강퇴",
+      exact: true,
+    }).click();
+    await expect(C.getByRole("alert")).toContainText("방장이 방에서");
+    await expect(C.getByRole("dialog")).toHaveCount(0);
+    await expect(C.getByRole("button", { name: "방 만들기" })).toBeVisible();
+  } finally {
+    await Promise.all(contexts.map((c) => c.close()));
+  }
+});
+
+test("일반 매칭 30초 안내에서 거절은 유지하고 수락은 빠른게임으로 전환한다", async ({
+  browser,
+}) => {
+  const a = await browser.newContext(),
+    A = await a.newPage();
+  try {
+    await A.clock.install();
+    await login(A, "오래기다림");
+    await A.getByRole("button", { name: "자동 매칭" }).click();
+    await A.getByRole("button", {
+      name: "일반게임 (4인)",
+      exact: true,
+    }).click();
+    await expect(A.locator(".matching")).toContainText("일반게임");
+    await expect(A.locator(".matching")).toContainText("대기 1명");
+    await A.clock.fastForward(31000);
+    await expect(A.getByRole("alertdialog")).toContainText(
+      "현재 4인게임 매칭이 지연되고 있습니다.",
+    );
+    await A.getByRole("button", {
+      name: "거절 · 일반게임 유지",
+      exact: true,
+    }).click();
+    await A.clock.fastForward(31000);
+    await expect(A.getByRole("alertdialog")).toHaveCount(0);
+    await expect(A.locator(".matching")).toContainText("일반게임");
+    await A.getByRole("button", { name: "매칭 취소", exact: true }).click();
+    await A.getByRole("button", { name: "자동 매칭" }).click();
+    await A.getByRole("button", {
+      name: "일반게임 (4인)",
+      exact: true,
+    }).click();
+    await expect(A.locator(".matching")).toContainText("일반게임");
+    await expect(A.locator(".matching")).toContainText("대기 1명");
+    await A.clock.fastForward(31000);
+    await A.getByRole("button", {
+      name: "수락 · 빠른게임으로 변경",
+      exact: true,
+    }).click();
+    await expect(A.locator(".matching")).toContainText("빠른게임 · 2인");
+    await expect(A.getByRole("alertdialog")).toHaveCount(0);
+  } finally {
+    await a.close();
+  }
+});
+
+test("사람끼리 끝낸 게임 전적은 양쪽 기기에 한 번만 저장하고 상세보기에 반영한다", async ({
+  browser,
+}) => {
+  const a = await browser.newContext(),
+    b = await browser.newContext(),
+    A = await a.newPage(),
+    B = await b.newPage();
+  try {
+    await A.clock.install();
+    await login(A, "기록주인");
+    await login(B, "기록손님");
+    await A.getByRole("button", { name: "방 만들기" }).click();
+    await A.getByRole("button", { name: "탐사대 만들기" }).click();
+    await B.getByRole("button", { name: "방 참가하기" }).click();
+    await B.getByRole("button", {
+      name: "기록주인님의 방 참가",
+      exact: true,
+    }).click({ timeout: 20000 });
+    for (const P of [A, B])
+      await P.getByRole("button", { name: "준비 완료", exact: true }).click();
+    await A.getByRole("button", { name: "탐사 시작" }).click();
+    await expect(B.locator(".tile")).toHaveCount(40);
+    await A.clock.fastForward(31 * 60000);
+    await expect(A.locator(".result-dialog")).toBeVisible();
+    await expect(B.locator(".result-dialog")).toBeVisible();
+    for (const P of [A, B]) {
+      await P.getByRole("button", { name: "전적 보기", exact: true }).click();
+      await expect(P.locator(".profile-card")).toContainText("전체 1판");
+      await P.getByRole("button", { name: "상세보기", exact: true }).click();
+      await expect(P.locator(".records-table tbody tr")).toHaveCount(4);
+      await P.keyboard.press("Escape");
+    }
+    await A.clock.fastForward(10000);
+    await A.getByRole("button", { name: "전적 보기", exact: true }).click();
+    await expect(A.locator(".profile-card")).toContainText("전체 1판");
+  } finally {
+    await a.close();
+    await b.close();
   }
 });

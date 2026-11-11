@@ -9,6 +9,10 @@ export interface Identity {
  * Never accept user IDs or profile claims directly from browser input. */
 export interface IdentityAdapter {
   resolve(request: Pick<Request, "headers">): Promise<Identity | null>;
+  /** Optional site profile provider. Game records remain keyed by the stable id. */
+  profile?(
+    id: string,
+  ): Promise<{ name?: string; profile?: string; url?: string } | null>;
 }
 export function newToken() {
   return randomBytes(32).toString("base64url");

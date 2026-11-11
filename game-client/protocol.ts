@@ -1,3 +1,12 @@
+import type {
+  Stats,
+  RoomMode,
+  MatchMode,
+  Spectator,
+  ChatMessage,
+  Emoji,
+  GameResult,
+} from "../game-social";
 import type { GameView } from "../game-core";
 export type Member = {
   id: string;
@@ -6,6 +15,7 @@ export type Member = {
   profile?: string;
   ai?: string;
   offlineSince?: number;
+  stats?: Stats;
 };
 export type Room = {
   id: string;
@@ -19,12 +29,22 @@ export type Room = {
   members: Member[];
   connection?: "connecting" | "ready" | "offline";
   game?: GameView;
+  mode?: RoomMode;
+  spectators?: Spectator[];
+  chat?: ChatMessage[];
+  emojis?: Emoji[];
+  startedAt?: number;
+  isSpectator?: boolean;
+  watching?: string;
+  result?: GameResult;
 };
 export type State = {
   room: Room | null;
   matching: boolean;
   count: number;
   matchAt: number;
+  matchMode?: MatchMode;
+  matchStartedAt?: number;
   paused?: boolean;
   clockNow?: number;
 };
@@ -41,4 +61,8 @@ export type RoomListing = {
   allowAI: boolean;
   minutes: number;
   locked: boolean;
+  playing?: boolean;
+  playerNames?: string[];
+  startedAt?: number;
+  mode?: RoomMode;
 };

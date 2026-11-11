@@ -20,6 +20,20 @@ import { PropertyArt, CardArt } from "./Art";
 const Dice = React.lazy(() =>
   import("./Dice").then((m) => ({ default: m.Dice })),
 );
+import {
+  ChatPanel,
+  ObserversPanel,
+  ProfilePanel,
+  type ProfileCard,
+} from "./SocialPanels";
+import { localStats, saveLocalResult } from "./stats";
+import {
+  emptyStats,
+  validStats,
+  standing,
+  type MatchMode,
+  type Stats,
+} from "../game-social";
 import type { State, RoomListing } from "./protocol";
 import type { RoomDirectory, DirectoryStatus } from "./room-directory";
 import type { SoloController } from "./solo";
@@ -136,6 +150,10 @@ function App() {
     useState<DirectoryStatus>("connecting");
   const [listRefresh, setListRefresh] = useState(0);
   const [joinRoom, setJoinRoom] = useState<RoomListing | null>(null);
+  const [profile, setProfile] = useState<ProfileCard | null>(null);
+  const [myStats, setMyStats] = useState<Stats>(emptyStats);
+  const recordedGames = useRef(new Set<string>());
+  const [declinedSlow, setDeclinedSlow] = useState(false);
   const [actionDock, setActionDock] = useState<HTMLDivElement | null>(null);
   const [identityMode, setIdentityMode] = useState("standalone");
   const socket = useRef<Socket | null>(null);
@@ -214,7 +232,12 @@ function App() {
       setRoomList(rooms);
       setDirectoryStatus("ready");
     });
-    s.on("kicked", (message: string) => setError(message));
+    s.on("kicked", (message: string) => {
+      setPanel("");
+      setSelected(null);
+      setPaymentOpen(false);
+      setError(message);
+    });
     s.on("state", (snapshot: State & { serverNow: number }) => {
       clockOffset.current = snapshot.serverNow - Date.now();
       setNow(snapshot.serverNow);
@@ -276,9 +299,11 @@ function App() {
   }, [panel, selected, back, state.room?.game?.phase, paymentOpen]);
   const room = state.room,
     g = room?.game,
-    p = g?.players.find((p) => p.id === me?.id),
+    isSpectator = !!room?.isSpectator,
+    viewId = isSpectator ? room?.watching || g?.players[0]?.id : me?.id,
+    p = g?.players.find((p) => p.id === viewId),
     turn = g?.players[g.turn],
-    myTurn = turn?.id === me?.id;
+    myTurn = !isSpectator && turn?.id === me?.id;
   useEffect(() => {
     const before = lastSoundGame.current;
     lastSoundGame.current = g ? structuredClone(g) : null;
@@ -372,12 +397,71 @@ function App() {
     else setListRefresh((n) => n + 1);
   }
   function chooseRoom(selectedRoom: RoomListing) {
-    if (busy || selectedRoom.count >= selectedRoom.max) return;
+    if (
+      busy ||
+      (!selectedRoom.playing && selectedRoom.count >= selectedRoom.max)
+    )
+      return;
     if (selectedRoom.locked) setJoinRoom(selectedRoom);
     else
-      command({ type: "join", code: selectedRoom.code, password: "" }, () =>
-        setPanel(""),
+      command(
+        {
+          type: "join",
+          code: selectedRoom.code,
+          password: "",
+          spectate: !!selectedRoom.playing,
+        },
+        () => setPanel(""),
       );
+  }
+  useEffect(() => {
+    if (me) setMyStats(SOLO ? localStats(me.id) : emptyStats());
+  }, [me?.id]);
+  useEffect(() => {
+    if (
+      !me ||
+      !room?.result ||
+      room.isSpectator ||
+      recordedGames.current.has(room.result.gameId)
+    )
+      return;
+    recordedGames.current.add(room.result.gameId);
+    if (SOLO) setMyStats(saveLocalResult(me.id, room.result));
+  }, [room?.result?.gameId, me?.id]);
+  useEffect(() => {
+    if (!state.matching) setDeclinedSlow(false);
+  }, [state.matching]);
+  async function openProfile(id: string) {
+    const member = room?.members.find((m) => m.id === id),
+      player = g?.players.find((p) => p.id === id);
+    const base: ProfileCard = {
+      id,
+      name: member?.name || player?.name || me?.name || "탐사대원",
+      profile: member?.profile,
+      stats: validStats(member?.stats)
+        ? member.stats
+        : id === me?.id
+          ? myStats
+          : emptyStats(),
+      source: SOLO ? "local" : "server",
+      ai: !!member?.ai,
+    };
+    setProfile(base);
+    setPanel("profile");
+    if (!SOLO && !base.ai) {
+      try {
+        const response = await fetch(`/api/profile/${encodeURIComponent(id)}`);
+        if (response.ok) {
+          const card = await response.json();
+          if (validStats(card.stats))
+            setProfile((current) => (current?.id === id ? card : current));
+        }
+      } catch {}
+    }
+  }
+  function chooseMatch(mode: MatchMode) {
+    setDeclinedSlow(false);
+    command({ type: SOLO ? "peer-match" : "match", mode }, () => setPanel(""));
   }
   const [drawOrigin, setDrawOrigin] = useState<React.CSSProperties>({});
   useLayoutEffect(() => {
@@ -574,7 +658,7 @@ function App() {
   function openOnline(intent: string) {
     setOnlineIntent(intent);
     if (!serverURL.trim()) {
-      if (intent === "match") command({ type: "peer-match" });
+      if (intent === "match") setPanel("match-select");
       else setPanel(intent);
       return;
     }
@@ -604,7 +688,7 @@ function App() {
     const intent = new URL(location.href).searchParams.get("entry");
     if (!["match", "create", "join"].includes(intent ?? "")) return;
     onlineEntry.current = true;
-    if (intent === "match") command({ type: "match" });
+    if (intent === "match") setPanel("match-select");
     else setPanel(intent!);
   }, [connected, me, room]);
   async function getPeerRoom() {
@@ -613,6 +697,9 @@ function App() {
     const { PeerRoomController } = await import("./peer-room");
     const controller = new PeerRoomController(me, (message) => {
       peerRoom.current = null;
+      setPanel("");
+      setSelected(null);
+      setPaymentOpen(false);
       setState(solo.current!.snapshot());
       if (message) setError(message);
     });
@@ -671,11 +758,16 @@ function App() {
             data.type === "peer-match" ||
             data.type === "join"
           ) {
+            if (data.type === "peer-match" && peerRoom.current) {
+              peerRoom.current.close();
+              peerRoom.current = null;
+            }
             const online = await getPeerRoom();
             operationPeer = online;
             if (data.type === "peer-create") await online.create(envelope);
-            else if (data.type === "peer-match") await online.match();
-            else await online.join(data.code, data.password);
+            else if (data.type === "peer-match")
+              await online.match(data.mode as MatchMode);
+            else await online.join(data.code, data.password, !!data.spectate);
           } else if (peerRoom.current) await peerRoom.current.command(envelope);
           else solo.current!.command(envelope);
           if (operationPeer && peerRoom.current !== operationPeer) {
@@ -730,6 +822,7 @@ function App() {
   }
 
   function action(a: Action) {
+    if (isSpectator) return;
     if (g)
       command({
         type: "action",
@@ -843,7 +936,17 @@ function App() {
   const controls =
     g && p ? (
       <div className="action-area">
-        {state.paused ? (
+        {isSpectator ? (
+          <>
+            <p>
+              <span className="spectator-badge">관전</span> {p.name}의 화면 ·
+              읽기 전용
+            </p>
+            <button onClick={() => command({ type: "leave" })}>
+              관전 종료
+            </button>
+          </>
+        ) : state.paused ? (
           <p>탐사가 일시 정지되었습니다.</p>
         ) : ["animation", "moving", "reveal"].includes(g.phase) ? (
           <p>{motionText}</p>
@@ -896,10 +999,14 @@ function App() {
         <div className="header-right">
           <span className="edition">EARTH SCIENCE EXPEDITION / 01</span>
           {me && (
-            <span className="identity">
+            <button
+              className="identity profile-trigger"
+              onClick={() => void openProfile(me.id)}
+              aria-label="내 프로필과 전적"
+            >
               <i className={connected ? "online" : ""} />
               {me.name}
-            </span>
+            </button>
           )}
           {SOLO && g && !peerRoom.current && (
             <>
@@ -920,6 +1027,26 @@ function App() {
               </button>
             </>
           )}
+          {room && (
+            <button
+              className="icon-button"
+              aria-label="채팅"
+              onClick={() => setPanel("chat")}
+            >
+              ☏
+            </button>
+          )}
+          {room &&
+            room.host === me?.id &&
+            (!room.mode || room.mode === "private") && (
+              <button
+                className="icon-button"
+                aria-label="관전 목록"
+                onClick={() => setPanel("observers")}
+              >
+                ◉<small>{room.spectators?.length || 0}</small>
+              </button>
+            )}
           <button
             className="icon-button"
             aria-label="설정"
@@ -1012,12 +1139,43 @@ function App() {
             ) : state.matching ? (
               <div className="matching">
                 <span className="radar">◎</span>
-                <h3>탐사대원을 찾고 있어요</h3>
+                <h3>
+                  {state.matchMode === "normal"
+                    ? "일반게임 · 4인"
+                    : "빠른게임 · 2인"}{" "}
+                  매칭 중
+                </h3>
                 <p>
-                  대기 {state.count}명 · 다음 확인까지{" "}
-                  {Math.max(0, Math.ceil((state.matchAt - now) / 1000))}초
+                  대기 {state.count}명 ·{" "}
+                  {Math.max(
+                    0,
+                    Math.floor((now - (state.matchStartedAt ?? now)) / 1000),
+                  )}
+                  초 경과
                 </p>
-                <p className="fine">10초마다 2~4명의 실제 대원을 연결합니다.</p>
+                <p className="fine">선택한 인원이 모이면 바로 시작합니다.</p>
+                {state.matchMode === "normal" &&
+                  state.count >= 1 &&
+                  state.count <= 2 &&
+                  !declinedSlow &&
+                  now - (state.matchStartedAt ?? now) >= 30000 && (
+                    <div
+                      className="slow-match-offer"
+                      role="alertdialog"
+                      aria-label="빠른게임 전환"
+                    >
+                      <p>
+                        현재 4인게임 매칭이 지연되고 있습니다. 빠른게임으로
+                        매칭하시겠습니까?
+                      </p>
+                      <button onClick={() => chooseMatch("quick")}>
+                        수락 · 빠른게임으로 변경
+                      </button>
+                      <button onClick={() => setDeclinedSlow(true)}>
+                        거절 · 일반게임 유지
+                      </button>
+                    </div>
+                  )}
                 <button onClick={() => command({ type: "cancel" })}>
                   매칭 취소
                 </button>
@@ -1028,7 +1186,7 @@ function App() {
                   className="primary"
                   disabled={!connected || busy}
                   onClick={() =>
-                    SOLO ? openOnline("match") : command({ type: "match" })
+                    SOLO ? openOnline("match") : setPanel("match-select")
                   }
                 >
                   <span>
@@ -1139,7 +1297,13 @@ function App() {
                   )}
                 </span>
                 <h3>
-                  {m.name} {m.id === room.host ? "♛" : ""}
+                  <button
+                    className="name-profile"
+                    onClick={() => void openProfile(m.id)}
+                  >
+                    {m.name}
+                  </button>{" "}
+                  {m.id === room.host ? "♛" : ""}
                 </h3>
                 <p>
                   {m.ai
@@ -1245,7 +1409,12 @@ function App() {
             {g.players.map((q, i) => (
               <article
                 key={q.id}
-                className={`player ${turn?.id === q.id ? "current" : ""} ${q.bankrupt ? "bankrupt" : ""}`}
+                className={`player ${turn?.id === q.id ? "current" : ""} ${q.bankrupt ? "bankrupt" : ""} ${isSpectator && viewId === q.id ? "watching-player" : ""}`}
+                onClick={() =>
+                  isSpectator
+                    ? command({ type: "watch", player: q.id })
+                    : void openProfile(q.id)
+                }
               >
                 <div className="player-heading">
                   <span className="avatar" style={{ background: colors[i] }}>
@@ -1314,6 +1483,28 @@ function App() {
                     "탐사 준비 중"}
                 </p>
                 {q.tide > 0 && <small>만조 · 탈출 시도 {q.tide}회 남음</small>}
+                {isSpectator && (
+                  <button
+                    className="watch-player"
+                    aria-label={`${q.name} 화면 관전`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      command({ type: "watch", player: q.id });
+                    }}
+                  >
+                    {viewId === q.id ? "관전 중" : "화면 보기"}
+                  </button>
+                )}
+                <button
+                  className="player-profile-button"
+                  aria-label={`${q.name} 프로필`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void openProfile(q.id);
+                  }}
+                >
+                  프로필
+                </button>
               </article>
             ))}
             <div className="fund-panel">
@@ -1616,14 +1807,14 @@ function App() {
             {compact && g.phase !== "finished" && (
               <div className="dock-clock">
                 {g.phase === "animation"
-                  ? `내 연구비 ${money(p?.cash ?? 0)} · 주사위 연출 중`
-                  : `내 연구비 ${money(p?.cash ?? 0)} · 남은 행동 시간 ${remaining}초`}
+                  ? `${isSpectator ? p?.name : "내"} 연구비 ${money(p?.cash ?? 0)} · 주사위 연출 중`
+                  : `${isSpectator ? p?.name : "내"} 연구비 ${money(p?.cash ?? 0)} · 남은 행동 시간 ${remaining}초`}
               </div>
             )}
           </div>
           <aside className="personal-panel">
             <div className="eyebrow">MY EXPEDITION</div>
-            <h2>나의 탐사 기록</h2>
+            <h2>{isSpectator ? `${p?.name}의 탐사 기록` : "나의 탐사 기록"}</h2>
             <div className="my-cash">
               {cashChanges
                 .filter((c) => c.id === p?.id && now - c.at < 2400)
@@ -1645,7 +1836,7 @@ function App() {
                 ▧ 내 소유지{" "}
                 <span>
                   {
-                    Object.values(g.estates).filter((e) => e.owner === me?.id)
+                    Object.values(g.estates).filter((e) => e.owner === viewId)
                       .length
                   }{" "}
                   →
@@ -1740,8 +1931,9 @@ function App() {
             </header>
             <div className="payment-summary">
               <strong>
-                {g.winner
-                  ?.map((id) => g.players.find((q) => q.id === id)?.name)
+                {g.players
+                  .filter((q) => standing(g, q.id)?.win)
+                  .map((q) => q.name)
                   .join(", ")}{" "}
                 승리
               </strong>
@@ -1749,11 +1941,19 @@ function App() {
             <div className="payment-details">
               {g.players.map((q) => (
                 <p key={q.id}>
-                  {q.name} · 최종 자산 {money(total(q))}원
+                  {standing(g, q.id)?.rank}위 · {q.name} ·{" "}
+                  {standing(g, q.id)?.win ? "승리" : "패배"} · 최종 자산{" "}
+                  {money(total(q))}원
                 </p>
               ))}
             </div>
             <div className="payment-actions result-actions">
+              {!isSpectator && me && (
+                <button onClick={() => void openProfile(me.id)}>
+                  전적 보기
+                </button>
+              )}
+              <button onClick={() => setPanel("chat")}>채팅</button>
               <button
                 className="primary"
                 disabled={busy || !connected}
@@ -1858,332 +2058,96 @@ function App() {
             </section>
           </div>
         )}
-      {panel && g?.phase !== "finished" && (
-        <div className="modal-overlay" onClick={() => setPanel("")}>
-          <section
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="panel-title"
-            onClick={(e) => e.stopPropagation()}
+      {panel &&
+        (g?.phase !== "finished" ||
+          ["chat", "profile", "observers"].includes(panel)) && (
+          <div
+            className={`modal-overlay ${["chat", "profile", "observers"].includes(panel) ? "social-modal" : ""}`}
+            onClick={() => setPanel("")}
           >
-            <button
-              className="close"
-              onClick={() => setPanel("")}
-              aria-label="닫기"
+            <section
+              className="modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="panel-title"
+              onClick={(e) => e.stopPropagation()}
             >
-              ×
-            </button>
-            <div className="eyebrow">EARTH MARBLE / EXPLORER'S GUIDE</div>
-            <h2 id="panel-title">
-              {
-                {
-                  online: "온라인 게임 서버 연결",
-                  "solo-reset": "새 탐사 준비",
-                  journal: "탐사 일지",
-                  create: "새 탐사대 만들기",
-                  join: "열린 방 목록",
-                  settings: "탐사 환경 설정",
-                  help: "함께 지구를 탐사하는 법",
-                  properties: "내 소유지",
-                  cards: "보유 카드",
-                  assets: "자산 상세보기",
-                }[panel]
-              }
-            </h2>
-            {panel === "online" && (
-              <div className="online-connection">
-                <p>
-                  다른 사람과 매칭하거나 방에 참가하려면 실행 중인 게임 서버에
-                  접속해야 합니다. 서버에서 매칭·방 생성·참가를 이어서
-                  진행합니다.
-                </p>
-                <label>
-                  게임 서버 주소
-                  <input
-                    type="url"
-                    placeholder="https://게임서버주소"
-                    value={serverURL}
-                    onChange={(e) => {
-                      setServerURL(e.target.value);
-                      writeSetting("earth-server-url", e.target.value);
-                    }}
-                  />
-                </label>
-                <button
-                  className="primary wide"
-                  disabled={!serverURL.trim()}
-                  onClick={() => openOnline(onlineIntent)}
-                >
-                  게임 서버에서 계속하기
-                </button>
-                <p className="fine">
-                  AI만 초대하는 방은 이 화면에서 방 만들기로 시작할 수 있습니다.
-                </p>
-              </div>
-            )}
-            {panel === "solo-reset" && (
-              <>
-                <p>
-                  현재 탐사를 종료하고 새로운 탐사를 준비합니다. 이 탐사의 저장
-                  기록도 바뀝니다.
-                </p>
-                <button onClick={() => setPanel("")}>돌아가기</button>
-                <button
-                  className="primary"
-                  onClick={() =>
-                    command({ type: "solo-reset" }, () => setPanel(""))
-                  }
-                >
-                  새 탐사 준비
-                </button>
-              </>
-            )}
-            {panel === "journal" && (
-              <div className="help-content">
-                {g?.lastCard && (
-                  <article>
-                    <h3>{CARDS[g.lastCard - 1].name}</h3>
-                    <p>{CARDS[g.lastCard - 1].science}</p>
-                    <p>{CARDS[g.lastCard - 1].effect}</p>
-                  </article>
-                )}
-                {g?.log
-                  .slice()
-                  .reverse()
-                  .map((text, i) => (
-                    <p key={i}>{text}</p>
-                  ))}
-              </div>
-            )}
-            {panel === "create" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  if (SOLO && serverURL.trim()) {
-                    openOnline("create");
-                    return;
-                  }
-                  command(
-                    {
-                      type: SOLO ? "peer-create" : "create",
-                      max: Number(f.get("max")),
-                      minutes: Number(f.get("minutes")),
-                      password: f.get("password"),
-                      allowAI: f.get("ai") === "on",
-                    },
-                    () => setPanel(""),
-                  );
-                }}
+              <button
+                className="close"
+                onClick={() => setPanel("")}
+                aria-label="닫기"
               >
-                <label>
-                  최대 인원
-                  <select name="max" defaultValue="4">
-                    {[2, 3, 4].map((n) => (
-                      <option key={n} value={n}>
-                        {n}명
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                ×
+              </button>
+              <div className="eyebrow">EARTH MARBLE / EXPLORER'S GUIDE</div>
+              <h2 id="panel-title">
                 {
-                  <label>
-                    방 비밀번호
-                    <input
-                      name="password"
-                      type="password"
-                      maxLength={64}
-                      placeholder="비워두면 비밀번호 없이 입장"
-                    />
-                  </label>
+                  {
+                    chat: "방 채팅",
+                    observers: "관전 목록",
+                    profile: "프로필과 전적",
+                    "match-select": "매칭 종류 선택",
+                    online: "온라인 게임 서버 연결",
+                    "solo-reset": "새 탐사 준비",
+                    journal: "탐사 일지",
+                    create: "새 탐사대 만들기",
+                    join: "열린 방 목록",
+                    settings: "탐사 환경 설정",
+                    help: "함께 지구를 탐사하는 법",
+                    properties: "내 소유지",
+                    cards: "보유 카드",
+                    assets: "자산 상세보기",
+                  }[panel]
                 }
-                <label>
-                  탐사 시간
-                  <select name="minutes" defaultValue="30">
-                    {[10, 20, 30, 60].map((n) => (
-                      <option key={n} value={n}>
-                        {n}분
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="checkbox">
-                  <input type="checkbox" name="ai" defaultChecked /> AI 대원
-                  초대 허용
-                </label>
-                <button className="primary wide" disabled={busy}>
-                  탐사대 만들기 →
-                </button>
-              </form>
-            )}
-            {panel === "join" && (
-              <div className="room-browser">
-                {joinRoom ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const current = roomList.find(
-                        (r) => r.id === joinRoom.id,
-                      );
-                      if (!current || current.count >= current.max) return;
-                      const f = new FormData(e.currentTarget);
-                      command(
-                        {
-                          type: "join",
-                          code: current.code,
-                          password: f.get("password"),
-                        },
-                        () => setPanel(""),
-                      );
-                    }}
+              </h2>
+              {panel === "chat" && room && me && (
+                <ChatPanel
+                  room={room}
+                  meId={me.id}
+                  now={now}
+                  busy={busy}
+                  command={command}
+                />
+              )}
+              {panel === "observers" && room && me && (
+                <ObserversPanel
+                  room={room}
+                  meId={me.id}
+                  busy={busy}
+                  command={command}
+                />
+              )}
+              {panel === "profile" && profile && (
+                <ProfilePanel key={profile.id} profile={profile} />
+              )}
+              {panel === "match-select" && (
+                <div className="match-options">
+                  <p>원하는 인원으로 매칭합니다.</p>
+                  <button
+                    className="primary wide"
+                    disabled={busy}
+                    onClick={() => chooseMatch("quick")}
                   >
-                    <h3>{joinRoom.name}</h3>
-                    {!roomList.some(
-                      (r) => r.id === joinRoom.id && r.count < r.max,
-                    ) && directoryStatus === "ready" ? (
-                      <p role="status">
-                        이 방은 닫혔거나 게임이 시작됐거나 정원이 찼습니다. 다른
-                        방을 선택하세요.
-                      </p>
-                    ) : (
-                      <p>
-                        비밀번호가 있는 방입니다. 비밀번호를 입력하면
-                        참가합니다.
-                      </p>
-                    )}
-                    <label>
-                      비밀번호
-                      <input
-                        name="password"
-                        type="password"
-                        maxLength={64}
-                        autoFocus
-                      />
-                    </label>
-                    <button
-                      className="primary wide"
-                      disabled={
-                        busy ||
-                        !roomList.some(
-                          (r) => r.id === joinRoom.id && r.count < r.max,
-                        )
-                      }
-                    >
-                      참가하기 →
-                    </button>
-                    <button
-                      type="button"
-                      className="wide"
-                      onClick={() => setJoinRoom(null)}
-                    >
-                      다른 방 보기
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <div className="room-browser-toolbar">
-                      <p role="status">
-                        {directoryStatus === "ready"
-                          ? roomList.length
-                            ? `열린 방 ${roomList.length}개 · 자동 갱신 중`
-                            : "열린 방이 없습니다. 새 방을 만들어 보세요."
-                          : directoryStatus === "offline"
-                            ? "방 목록에 연결하지 못했습니다. 새로고침해 주세요."
-                            : "방 목록에 연결 중입니다…"}
-                      </p>
-                      <button type="button" onClick={refreshRooms}>
-                        새로고침
-                      </button>
-                    </div>
-                    <div className="room-list" aria-label="열린 방">
-                      {roomList.map((r) => (
-                        <button
-                          type="button"
-                          className="room-list-item"
-                          key={r.id}
-                          aria-label={`${r.name} 참가`}
-                          disabled={busy || r.count >= r.max}
-                          onClick={() => chooseRoom(r)}
-                        >
-                          <span>
-                            <b>
-                              {r.locked ? "🔒 " : ""}
-                              {r.name}
-                            </b>
-                            <small>
-                              방장 {r.hostName} · {r.minutes}분 ·{" "}
-                              {r.allowAI ? "AI 허용" : "사람만"}
-                            </small>
-                          </span>
-                          <span>
-                            <strong>
-                              {r.count}/{r.max}명
-                            </strong>
-                            <small>
-                              {r.count >= r.max
-                                ? "정원 마감"
-                                : r.locked
-                                  ? "비밀번호 입력"
-                                  : "바로 참가 →"}
-                            </small>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            {panel === "settings" && (
-              <>
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={reduced}
-                    onChange={(e) => {
-                      setReduced(e.target.checked);
-                      writeSetting("earth-reduced", String(e.target.checked));
-                    }}
-                  />{" "}
-                  움직임 줄이기 (주사위·카드 회전)
-                </label>
-                <label className="volume-setting">
-                  효과음 음량 · {Math.round(volume * 100)}%
-                  <input
-                    aria-label="효과음 음량"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(volume * 100)}
-                    onChange={(e) => {
-                      const v = +e.target.value / 100;
-                      updateVolume(v);
-                      setVolume(v);
-                    }}
-                  />
-                </label>
-                <div className="sound-actions">
-                  <button onClick={() => playSound("gain")}>
-                    효과음 미리듣기
-                  </button>
-                  <button onClick={() => playSound("roll")}>주사위 소리</button>
-                  <button onClick={() => playSound("step")}>
-                    말 이동 소리
+                    빠른게임 (2인)
                   </button>
                   <button
-                    onClick={() => {
-                      const v = volume === 0 ? 0.4 : 0;
-                      updateVolume(v);
-                      setVolume(v);
-                    }}
+                    className="wide"
+                    disabled={busy}
+                    onClick={() => chooseMatch("normal")}
                   >
-                    {volume === 0 ? "소리 켜기" : "음소거"}
+                    일반게임 (4인)
                   </button>
                 </div>
-                {SOLO && (
-                  <label className="server-setting">
-                    전용 게임 서버 주소 (선택)
+              )}
+              {panel === "online" && (
+                <div className="online-connection">
+                  <p>
+                    다른 사람과 매칭하거나 방에 참가하려면 실행 중인 게임 서버에
+                    접속해야 합니다. 서버에서 매칭·방 생성·참가를 이어서
+                    진행합니다.
+                  </p>
+                  <label>
+                    게임 서버 주소
                     <input
                       type="url"
                       placeholder="https://게임서버주소"
@@ -2193,190 +2157,514 @@ function App() {
                         writeSetting("earth-server-url", e.target.value);
                       }}
                     />
-                    <small>
-                      주소를 비워 두면 공개 신호 서버를 통해 방장과 직접
-                      연결합니다.
-                    </small>
                   </label>
-                )}
-              </>
-            )}
-            {panel === "help" && (
-              <div className="help-content">
-                <h3>01 · 탐사대 구성</h3>
-                <p>
-                  {SOLO
-                    ? "방을 만들고 AI를 초대한 뒤 준비 완료와 탐사 시작을 누르세요. AI만 초대한 방은 싱글플레이로 실행됩니다. 사람과 매칭하거나 친구 방에 참가할 수도 있습니다. 온라인 방장은 창을 열어 두어야 합니다."
-                    : "2~4명이 함께 플레이합니다. 자동 매칭은 10초마다 확인하고, 개인 방에서는 AI도 초대할 수 있습니다. 모두 준비 후 방장이 시작합니다."}
-                </p>
-                <h3>02 · 주사위와 연구비</h3>
-                <p>
-                  주사위 두 개로 40칸을 시계 방향으로 탐사합니다. 2인은 150만,
-                  3~4인은 300만 연구비로 시작합니다. 정상 완주마다 20만을 받고
-                  건설 단계가 열립니다.
-                </p>
-                <h3>03 · 나만의 연구기지</h3>
-                <p>
-                  도착한 빈 소유지를 구매하세요. 자신의 소유지에 다시 도착하면
-                  1·2·3회 완주에 따라 관측소·연구소·종합연구센터를 순서대로
-                  하나씩 짓습니다. 통행료는 토지와 모든 시설의 금액을
-                  합산합니다.
-                </p>
-                <h3>04 · 바다의 리듬, 탐사의 변수</h3>
-                <p>
-                  3회 연속 더블은 만조로 이동합니다. 만조에서는 3차례 탈출을
-                  시도하며 더블이나 탈출권으로 벗어납니다. 간조에서는 다음 차례
-                  원하는 곳으로 이동할 수 있고 갯벌 소유자에게 20만을
-                  지급합니다.
-                </p>
-                <h3>05 · 카드와 승리</h3>
-                <p>
-                  탐사 카드 30장이 순환합니다. 보유 카드는 자신에게만 보이며
-                  조건에 맞을 때 사용합니다. 비용이 부족하면 내 소유지에서
-                  시설과 땅을 절반 가격에 매각하세요. 최후 생존자 또는 제한 시간
-                  종료 시 최고 자산 대원이 승리합니다.
-                </p>
-                <p>
-                  행동 제한은 60초입니다.{" "}
-                  {SOLO
-                    ? "탐사는 이 브라우저에 자동 저장됩니다. 탭을 닫거나 숨기면 시간이 멈추고 돌아왔을 때 이어집니다."
-                    : "연결이 끊겨도 상태가 유지되며 90초 후에는 자동 행동이 대신 진행합니다."}
-                </p>
-              </div>
-            )}
-            {panel === "cards" && (
-              <div>
-                {!p?.held.length && !p?.freeLow && (
-                  <p>보유한 카드가 없습니다.</p>
-                )}
-                {p?.held.map((id) => (
-                  <article className="held-card" key={id}>
-                    <CardArt id={id} />
-                    <h3>{CARDS[id - 1].name}</h3>
-                    <p className="usage">
-                      <b>사용 조건</b> {CARDS[id - 1].usage}
-                    </p>
-                    <p>{CARDS[id - 1].science}</p>
-                    <p>
-                      {CARDS[id - 1].effect} · 사용 후 버림 더미로 이동합니다.
-                      덱이 소진되면 함께 섞입니다.
-                    </p>
-                    <button
-                      disabled={
-                        !myTurn ||
-                        busy ||
-                        !connected ||
-                        remaining === 0 ||
-                        !(id === 24
-                          ? g?.phase === "roll" && p.tide > 0
-                          : g?.phase === "toll")
-                      }
-                      onClick={() => action({ type: "use", card: id })}
-                    >
-                      카드 사용
-                    </button>
-                  </article>
-                ))}
-                {p?.freeLow && (
-                  <article className="held-card">
-                    <CardArt id={22} />
-                    <h3>간조 이용료 면제 효과 · 1회</h3>
-                    <p className="usage">{CARDS[21].usage}</p>
-                    <p>
-                      간조 이동을 선택하면 다음 이용료를 자동으로 면제합니다.
-                    </p>
-                  </article>
-                )}
-              </div>
-            )}
-            {panel === "properties" && (
-              <div className="property-list">
-                {!Object.values(g?.estates || {}).some(
-                  (e) => e.owner === me?.id,
-                ) && <p>아직 보유한 소유지가 없습니다.</p>}
-                {BOARD.filter((t) => g?.estates[t.id]?.owner === me?.id).map(
-                  (t) => (
-                    <button
-                      className="owned-estate"
-                      key={t.id}
-                      onClick={() => {
-                        setPanel("");
-                        openTile(t.id);
+                  <button
+                    className="primary wide"
+                    disabled={!serverURL.trim()}
+                    onClick={() => openOnline(onlineIntent)}
+                  >
+                    게임 서버에서 계속하기
+                  </button>
+                  <p className="fine">
+                    AI만 초대하는 방은 이 화면에서 방 만들기로 시작할 수
+                    있습니다.
+                  </p>
+                </div>
+              )}
+              {panel === "solo-reset" && (
+                <>
+                  <p>
+                    현재 탐사를 종료하고 새로운 탐사를 준비합니다. 이 탐사의
+                    저장 기록도 바뀝니다.
+                  </p>
+                  <button onClick={() => setPanel("")}>돌아가기</button>
+                  <button
+                    className="primary"
+                    onClick={() =>
+                      command({ type: "solo-reset" }, () => setPanel(""))
+                    }
+                  >
+                    새 탐사 준비
+                  </button>
+                </>
+              )}
+              {panel === "journal" && (
+                <div className="help-content">
+                  {g?.lastCard && (
+                    <article>
+                      <h3>{CARDS[g.lastCard - 1].name}</h3>
+                      <p>{CARDS[g.lastCard - 1].science}</p>
+                      <p>{CARDS[g.lastCard - 1].effect}</p>
+                    </article>
+                  )}
+                  {g?.log
+                    .slice()
+                    .reverse()
+                    .map((text, i) => (
+                      <p key={i}>{text}</p>
+                    ))}
+                </div>
+              )}
+              {panel === "create" && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.currentTarget);
+                    if (SOLO && serverURL.trim()) {
+                      openOnline("create");
+                      return;
+                    }
+                    command(
+                      {
+                        type: SOLO ? "peer-create" : "create",
+                        max: Number(f.get("max")),
+                        minutes: Number(f.get("minutes")),
+                        password: f.get("password"),
+                        allowAI: f.get("ai") === "on",
+                      },
+                      () => setPanel(""),
+                    );
+                  }}
+                >
+                  <label>
+                    최대 인원
+                    <select name="max" defaultValue="4">
+                      {[2, 3, 4].map((n) => (
+                        <option key={n} value={n}>
+                          {n}명
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {
+                    <label>
+                      방 비밀번호
+                      <input
+                        name="password"
+                        type="password"
+                        maxLength={64}
+                        placeholder="비워두면 비밀번호 없이 입장"
+                      />
+                    </label>
+                  }
+                  <label>
+                    탐사 시간
+                    <select name="minutes" defaultValue="30">
+                      {[10, 20, 30, 60].map((n) => (
+                        <option key={n} value={n}>
+                          {n}분
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="checkbox">
+                    <input type="checkbox" name="ai" defaultChecked /> AI 대원
+                    초대 허용
+                  </label>
+                  <button className="primary wide" disabled={busy}>
+                    탐사대 만들기 →
+                  </button>
+                </form>
+              )}
+              {panel === "join" && (
+                <div className="room-browser">
+                  {joinRoom ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const current = roomList.find(
+                          (r) => r.id === joinRoom.id,
+                        );
+                        if (
+                          !current ||
+                          (!current.playing && current.count >= current.max)
+                        )
+                          return;
+                        const f = new FormData(e.currentTarget);
+                        command(
+                          {
+                            type: "join",
+                            code: current.code,
+                            password: f.get("password"),
+                            spectate: !!current.playing,
+                          },
+                          () => setPanel(""),
+                        );
                       }}
                     >
-                      <span
-                        className="owner-triangle"
-                        aria-label="소유자 색상"
-                        style={{
-                          background:
-                            colors[
-                              g!.players.findIndex((q) => q.id === me?.id)
-                            ],
+                      <h3>{joinRoom.name}</h3>
+                      {!roomList.some(
+                        (r) =>
+                          r.id === joinRoom.id &&
+                          (r.playing || r.count < r.max),
+                      ) && directoryStatus === "ready" ? (
+                        <p role="status">
+                          이 방은 닫혔거나 게임이 시작됐거나 정원이 찼습니다.
+                          다른 방을 선택하세요.
+                        </p>
+                      ) : (
+                        <p>
+                          비밀번호가 있는 방입니다. 비밀번호를 입력하면
+                          참가합니다.
+                        </p>
+                      )}
+                      <label>
+                        비밀번호
+                        <input
+                          name="password"
+                          type="password"
+                          maxLength={64}
+                          autoFocus
+                        />
+                      </label>
+                      <button
+                        className="primary wide"
+                        disabled={
+                          busy ||
+                          !roomList.some(
+                            (r) =>
+                              r.id === joinRoom.id &&
+                              (r.playing || r.count < r.max),
+                          )
+                        }
+                      >
+                        참가하기 →
+                      </button>
+                      <button
+                        type="button"
+                        className="wide"
+                        onClick={() => setJoinRoom(null)}
+                      >
+                        다른 방 보기
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="room-browser-toolbar">
+                        <p role="status">
+                          {directoryStatus === "ready"
+                            ? roomList.length
+                              ? `열린 방 ${roomList.length}개 · 자동 갱신 중`
+                              : "열린 방이 없습니다. 새 방을 만들어 보세요."
+                            : directoryStatus === "offline"
+                              ? "방 목록에 연결하지 못했습니다. 새로고침해 주세요."
+                              : "방 목록에 연결 중입니다…"}
+                        </p>
+                        <button type="button" onClick={refreshRooms}>
+                          새로고침
+                        </button>
+                      </div>
+                      <div className="room-list" aria-label="열린 방">
+                        {roomList.map((r) => (
+                          <button
+                            type="button"
+                            className={`room-list-item ${r.playing ? "playing-room" : ""}`}
+                            key={r.id}
+                            aria-label={`${r.name} ${r.playing ? "관전" : "참가"}`}
+                            disabled={busy || (!r.playing && r.count >= r.max)}
+                            onClick={() => chooseRoom(r)}
+                          >
+                            <span>
+                              <b>
+                                {r.locked ? "🔒 " : ""}
+                                {r.name}
+                                {r.playing && " · 게임 중"}
+                              </b>
+                              <small>
+                                {r.mode && r.mode !== "private"
+                                  ? r.mode === "quick"
+                                    ? "빠른게임"
+                                    : "일반게임"
+                                  : `방장 ${r.hostName}`}{" "}
+                                · {r.minutes}분 ·{" "}
+                                {r.allowAI ? "AI 허용" : "사람만"}
+                              </small>
+                              {r.playing && (
+                                <small>
+                                  {r.playerNames?.join(", ")} ·{" "}
+                                  {Math.max(
+                                    0,
+                                    Math.floor(
+                                      (now - (r.startedAt ?? now)) / 60000,
+                                    ),
+                                  )}
+                                  분 경과
+                                </small>
+                              )}
+                            </span>
+                            <span>
+                              <strong>
+                                {r.count}/{r.max}명
+                              </strong>
+                              <small>
+                                {r.playing
+                                  ? "관전하기 →"
+                                  : r.count >= r.max
+                                    ? "정원 마감"
+                                    : r.locked
+                                      ? "비밀번호 입력"
+                                      : "바로 참가 →"}
+                              </small>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {panel === "settings" && (
+                <>
+                  {me && (
+                    <button onClick={() => void openProfile(me.id)}>
+                      내 프로필과 전적
+                    </button>
+                  )}
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={reduced}
+                      onChange={(e) => {
+                        setReduced(e.target.checked);
+                        writeSetting("earth-reduced", String(e.target.checked));
+                      }}
+                    />{" "}
+                    움직임 줄이기 (주사위·카드 회전)
+                  </label>
+                  <label className="volume-setting">
+                    효과음 음량 · {Math.round(volume * 100)}%
+                    <input
+                      aria-label="효과음 음량"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(volume * 100)}
+                      onChange={(e) => {
+                        const v = +e.target.value / 100;
+                        updateVolume(v);
+                        setVolume(v);
+                      }}
+                    />
+                  </label>
+                  <div className="sound-actions">
+                    <button onClick={() => playSound("gain")}>
+                      효과음 미리듣기
+                    </button>
+                    <button onClick={() => playSound("roll")}>
+                      주사위 소리
+                    </button>
+                    <button onClick={() => playSound("step")}>
+                      말 이동 소리
+                    </button>
+                    <button
+                      onClick={() => {
+                        const v = volume === 0 ? 0.4 : 0;
+                        updateVolume(v);
+                        setVolume(v);
+                      }}
+                    >
+                      {volume === 0 ? "소리 켜기" : "음소거"}
+                    </button>
+                  </div>
+                  {SOLO && (
+                    <label className="server-setting">
+                      전용 게임 서버 주소 (선택)
+                      <input
+                        type="url"
+                        placeholder="https://게임서버주소"
+                        value={serverURL}
+                        onChange={(e) => {
+                          setServerURL(e.target.value);
+                          writeSetting("earth-server-url", e.target.value);
                         }}
                       />
                       <small>
-                        {ZONES[t.zone]} · {t.id}번
+                        주소를 비워 두면 공개 신호 서버를 통해 방장과 직접
+                        연결합니다.
                       </small>
-                      <b>{t.name}</b>
-                      <span>
-                        {g?.estates[t.id].buildings
-                          .map((b, i) => (b ? BUILDINGS[i] : ""))
-                          .filter(Boolean)
-                          .join(" + ") || "시설 없음"}
-                      </span>
-                      <span>현재 통행료 {money(rent(t.id))} →</span>
-                    </button>
-                  ),
-                )}
-              </div>
-            )}
-            {panel === "assets" && (
-              <div className="asset-list">
-                <p>
-                  연구비 <b>{money(p?.cash || 0)}</b>
-                </p>
-                <p>
-                  총자산 <b>{money(p ? total(p) : 0)}</b>
-                </p>
-                <p>
-                  소유지 가치{" "}
-                  <b>
-                    {money(
-                      Object.entries(g?.estates || {}).reduce(
-                        (v, [id, e]) =>
-                          v + (e.owner === me?.id ? BOARD[+id].price! : 0),
-                        0,
-                      ),
-                    )}
-                  </b>
-                </p>
-                <p>
-                  시설 가치{" "}
-                  <b>
-                    {money(
-                      Object.entries(g?.estates || {}).reduce(
-                        (v, [id, e]) =>
-                          v +
-                          (e.owner === me?.id
-                            ? e.buildings.reduce(
-                                (n, b, i) => n + (b ? BOARD[+id].costs![i] : 0),
-                                0,
-                              )
-                            : 0),
-                        0,
-                      ),
-                    )}
-                  </b>
-                </p>
-                <p>은행 매각은 구매·건설 비용의 50%입니다.</p>
-                <button onClick={() => setPanel("properties")}>
-                  소유지에서 매각하기 →
-                </button>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
+                    </label>
+                  )}
+                </>
+              )}
+              {panel === "help" && (
+                <div className="help-content">
+                  <h3>01 · 탐사대 구성</h3>
+                  <p>
+                    {SOLO
+                      ? "방을 만들고 AI를 초대한 뒤 준비 완료와 탐사 시작을 누르세요. AI만 초대한 방은 싱글플레이로 실행됩니다. 사람과 매칭하거나 친구 방에 참가할 수도 있습니다. 온라인 방장은 창을 열어 두어야 합니다."
+                      : "2~4명이 함께 플레이합니다. 자동 매칭은 10초마다 확인하고, 개인 방에서는 AI도 초대할 수 있습니다. 모두 준비 후 방장이 시작합니다."}
+                  </p>
+                  <h3>02 · 주사위와 연구비</h3>
+                  <p>
+                    주사위 두 개로 40칸을 시계 방향으로 탐사합니다. 2인은 150만,
+                    3~4인은 300만 연구비로 시작합니다. 정상 완주마다 20만을 받고
+                    건설 단계가 열립니다.
+                  </p>
+                  <h3>03 · 나만의 연구기지</h3>
+                  <p>
+                    도착한 빈 소유지를 구매하세요. 자신의 소유지에 다시 도착하면
+                    1·2·3회 완주에 따라 관측소·연구소·종합연구센터를 순서대로
+                    하나씩 짓습니다. 통행료는 토지와 모든 시설의 금액을
+                    합산합니다.
+                  </p>
+                  <h3>04 · 바다의 리듬, 탐사의 변수</h3>
+                  <p>
+                    3회 연속 더블은 만조로 이동합니다. 만조에서는 3차례 탈출을
+                    시도하며 더블이나 탈출권으로 벗어납니다. 간조에서는 다음
+                    차례 원하는 곳으로 이동할 수 있고 갯벌 소유자에게 20만을
+                    지급합니다.
+                  </p>
+                  <h3>05 · 카드와 승리</h3>
+                  <p>
+                    탐사 카드 30장이 순환합니다. 관전자는 선택한 대원의 손패를
+                    볼 수 있습니다. 참가자는 자신의 보유 카드만 보며 조건에 맞을
+                    때 사용합니다. 비용이 부족하면 내 소유지에서 시설과 땅을
+                    절반 가격에 매각하세요. 최후 생존자 또는 제한 시간 종료 시
+                    자산 순위로 정산합니다. 2·3인전은 1위, 4인전은 1·2위가
+                    승리합니다.
+                  </p>
+                  <p>
+                    행동 제한은 60초입니다.{" "}
+                    {SOLO
+                      ? "탐사는 이 브라우저에 자동 저장됩니다. 탭을 닫거나 숨기면 시간이 멈추고 돌아왔을 때 이어집니다."
+                      : "연결이 끊겨도 상태가 유지되며 90초 후에는 자동 행동이 대신 진행합니다."}
+                  </p>
+                </div>
+              )}
+              {panel === "cards" && (
+                <div>
+                  {!p?.held.length && !p?.freeLow && (
+                    <p>보유한 카드가 없습니다.</p>
+                  )}
+                  {p?.held.map((id) => (
+                    <article className="held-card" key={id}>
+                      <CardArt id={id} />
+                      <h3>{CARDS[id - 1].name}</h3>
+                      <p className="usage">
+                        <b>사용 조건</b> {CARDS[id - 1].usage}
+                      </p>
+                      <p>{CARDS[id - 1].science}</p>
+                      <p>
+                        {CARDS[id - 1].effect} · 사용 후 버림 더미로 이동합니다.
+                        덱이 소진되면 함께 섞입니다.
+                      </p>
+                      <button
+                        disabled={
+                          !myTurn ||
+                          busy ||
+                          !connected ||
+                          remaining === 0 ||
+                          !(id === 24
+                            ? g?.phase === "roll" && p.tide > 0
+                            : g?.phase === "toll")
+                        }
+                        onClick={() => action({ type: "use", card: id })}
+                      >
+                        카드 사용
+                      </button>
+                    </article>
+                  ))}
+                  {p?.freeLow && (
+                    <article className="held-card">
+                      <CardArt id={22} />
+                      <h3>간조 이용료 면제 효과 · 1회</h3>
+                      <p className="usage">{CARDS[21].usage}</p>
+                      <p>
+                        간조 이동을 선택하면 다음 이용료를 자동으로 면제합니다.
+                      </p>
+                    </article>
+                  )}
+                </div>
+              )}
+              {panel === "properties" && (
+                <div className="property-list">
+                  {!Object.values(g?.estates || {}).some(
+                    (e) => e.owner === viewId,
+                  ) && <p>아직 보유한 소유지가 없습니다.</p>}
+                  {BOARD.filter((t) => g?.estates[t.id]?.owner === viewId).map(
+                    (t) => (
+                      <button
+                        className="owned-estate"
+                        key={t.id}
+                        onClick={() => {
+                          setPanel("");
+                          openTile(t.id);
+                        }}
+                      >
+                        <span
+                          className="owner-triangle"
+                          aria-label="소유자 색상"
+                          style={{
+                            background:
+                              colors[
+                                g!.players.findIndex((q) => q.id === viewId)
+                              ],
+                          }}
+                        />
+                        <small>
+                          {ZONES[t.zone]} · {t.id}번
+                        </small>
+                        <b>{t.name}</b>
+                        <span>
+                          {g?.estates[t.id].buildings
+                            .map((b, i) => (b ? BUILDINGS[i] : ""))
+                            .filter(Boolean)
+                            .join(" + ") || "시설 없음"}
+                        </span>
+                        <span>현재 통행료 {money(rent(t.id))} →</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              )}
+              {panel === "assets" && (
+                <div className="asset-list">
+                  <p>
+                    연구비 <b>{money(p?.cash || 0)}</b>
+                  </p>
+                  <p>
+                    총자산 <b>{money(p ? total(p) : 0)}</b>
+                  </p>
+                  <p>
+                    소유지 가치{" "}
+                    <b>
+                      {money(
+                        Object.entries(g?.estates || {}).reduce(
+                          (v, [id, e]) =>
+                            v + (e.owner === viewId ? BOARD[+id].price! : 0),
+                          0,
+                        ),
+                      )}
+                    </b>
+                  </p>
+                  <p>
+                    시설 가치{" "}
+                    <b>
+                      {money(
+                        Object.entries(g?.estates || {}).reduce(
+                          (v, [id, e]) =>
+                            v +
+                            (e.owner === viewId
+                              ? e.buildings.reduce(
+                                  (n, b, i) =>
+                                    n + (b ? BOARD[+id].costs![i] : 0),
+                                  0,
+                                )
+                              : 0),
+                          0,
+                        ),
+                      )}
+                    </b>
+                  </p>
+                  <p>은행 매각은 구매·건설 비용의 50%입니다.</p>
+                  <button onClick={() => setPanel("properties")}>
+                    소유지에서 매각하기 →
+                  </button>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       {g?.phase === "reveal" && g.pendingCard && (
         <div
           className="modal-overlay card-reveal-overlay"

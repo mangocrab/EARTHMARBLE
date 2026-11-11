@@ -257,7 +257,10 @@ test("외부 로비의 매칭 진입 요청은 로그인 후 실제 서버 매�
   await page.goto("/?entry=match");
   await page.getByLabel("탐사대원 닉네임").fill("온라인연결");
   await page.getByRole("button", { name: "탐사대원 등록" }).click();
-  await expect(page.getByText("탐사대원을 찾고 있어요")).toBeVisible();
+  await page
+    .getByRole("button", { name: "빠른게임 (2인)", exact: true })
+    .click();
+  await expect(page.locator(".matching")).toContainText("빠른게임 · 2인");
   await page.getByRole("button", { name: "매칭 취소" }).click();
   await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
 });

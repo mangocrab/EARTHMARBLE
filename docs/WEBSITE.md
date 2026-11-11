@@ -30,3 +30,11 @@ EarthMarble.mount("#earth-marble", {
 Pages 삽입은 게임 닉네임으로 바로 실행합니다. 기존 사이트의 회원 계정으로 자동 로그인하려면 Node 서버 빌드를 배포하고 [IdentityAdapter](../identity-adapter/index.ts)를 해당 사이트의 인증에 연결합니다. `IDENTITY_ADAPTER_MODULE`을 설정하면 게임은 사이트 인증 결과로 세션을 발급하고 이후 HTTP·WebSocket 명령도 같은 계정으로 검증합니다. 사용자 ID를 iframe URL에 전달하는 방식으로 인증하지 않습니다.
 
 사이트 주소·로그인 프로토콜이 아직 정해지지 않아 특정 사이트의 회원 연동을 완료한 상태는 아닙니다. 현재 제공하는 것은 실행 가능한 삽입 스크립트, Pages 실행 예제, 검증된 인증 어댑터 인터페이스입니다. 서명된 사이트 계정으로 방을 만드는 기존 서버 브라우저 테스트와, iframe 안의 방장/외부 브라우저 손님 간 실제 WebRTC 참가·강퇴 테스트를 함께 실행합니다.
+
+## 프로필·전적과 서버 이모티콘
+
+`IdentityAdapter.profile(id)`를 선택적으로 구현하면 프로필 창의 이름·사진·사이트 프로필 링크를 공급할 수 있습니다. 반환값은 `{ name?, profile?, url? }`이며 사진과 링크는 HTTPS 또는 사이트 절대 경로를 사용합니다. 로그인 연동과 별도로 나중에 추가해도 됩니다. 설정하지 않으면 임시 프로필을 표시합니다.
+
+인증된 `GET /api/profile/:id`는 서버가 집계한 `{ id, name, profile?, url?, stats, source: "server" }`를 반환합니다. `stats`는 `2`, `3`, `4` 키마다 `{ games, wins, losses }`입니다. 게임 종료 시 서버 SQLite `game_results`에 `(game_id,user_id)`당 한 번만 저장하며 클라이언트가 승패를 제출하는 API는 없습니다. 기존 사이트에서 집계하려면 이 조회 경로 또는 같은 DB의 결과 행을 연결하세요. Pages 기기 기록은 계정 서버 전적으로 자동 승격하지 않습니다.
+
+서버 실행 환경에서 `EMOJI_CATALOG_FILE`에 JSON 목록 파일을 지정하세요. 항목은 `{ "id": "leaf", "label": "새싹", "url": "/site-emojis/leaf.webp" }` 또는 `{ "id": "earth", "label": "지구", "text": "🌍" }`입니다. 최대 100개이며 URL은 HTTPS 또는 사이트 절대 경로만 허용합니다. `EMOJI_STATIC_DIR`을 지정하면 해당 디렉터리를 `/site-emojis`로 제공합니다. 이미 사이트에서 제공하는 HTTPS 이미지 URL도 그대로 쓸 수 있습니다. 설정 변경 후 서버를 재시작하며 새로 만든 방부터 적용됩니다. 매칭 게임은 이모티콘을 포함한 자유 입력을 서버에서 거절하고 퀵채팅만 허용합니다.

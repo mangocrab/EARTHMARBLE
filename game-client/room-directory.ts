@@ -2,7 +2,7 @@ import type Peer from "peerjs";
 import type { DataConnection } from "peerjs";
 import { openPeer, connect } from "./peer-transport";
 import type { RoomListing } from "./protocol";
-const DIRECTORY = "earthmarble-public-rooms-v1";
+const DIRECTORY = "earthmarble-public-rooms-v2";
 const LEASE = 18000;
 export type DirectoryStatus = "connecting" | "ready" | "offline";
 function validRoom(value: any): value is RoomListing {
@@ -28,9 +28,43 @@ function validRoom(value: any): value is RoomListing {
   );
 }
 function publicListing(room: RoomListing): RoomListing {
-  const { id, code, name, hostName, count, max, allowAI, minutes, locked } =
-    room;
-  return { id, code, name, hostName, count, max, allowAI, minutes, locked };
+  const {
+    id,
+    code,
+    name,
+    hostName,
+    count,
+    max,
+    allowAI,
+    minutes,
+    locked,
+    playing,
+    playerNames,
+    startedAt,
+    mode,
+  } = room;
+  return {
+    id,
+    code,
+    name,
+    hostName,
+    count,
+    max,
+    allowAI,
+    minutes,
+    locked,
+    playing: !!playing,
+    playerNames: Array.isArray(playerNames)
+      ? playerNames
+          .filter((n) => typeof n === "string" && n.length <= 16)
+          .slice(0, 4)
+      : [],
+    startedAt:
+      typeof startedAt === "number" && Number.isFinite(startedAt)
+        ? startedAt
+        : undefined,
+    mode: mode === "quick" || mode === "normal" ? mode : "private",
+  };
 }
 /** A live, elected directory for Pages. Hosts register through their actual game
  * peer, so one connection can only publish its own room. No password is sent.

@@ -457,6 +457,9 @@ it("방 목록은 공개 대기실 정보만 반환하고 정원·시작·나가
       "minutes",
       "allowAI",
       "locked",
+      "playing",
+      "playerNames",
+      "mode",
     ].sort(),
   );
   expect(JSON.stringify(row)).not.toContain("secret");
@@ -471,7 +474,9 @@ it("방 목록은 공개 대기실 정보만 반환하고 정원·시작·나가
   await cmd(A.s, { type: "ready" });
   await cmd(B.s, { type: "ready" });
   await cmd(A.s, { type: "start" });
-  expect((await list(C.s)).rooms.some((r: any) => r.code === code)).toBe(false);
+  expect(
+    (await list(C.s)).rooms.find((r: any) => r.code === code),
+  ).toMatchObject({ playing: true, playerNames: ["목록주인", "목록방문"] });
   await cmd(C.s, {
     type: "create",
     max: 4,

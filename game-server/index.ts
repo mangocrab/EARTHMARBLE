@@ -8,7 +8,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Server } from "socket.io";
 import {
@@ -22,6 +22,17 @@ import {
   type Difficulty,
 } from "../game-core";
 import { decide } from "../game-ai";
+import {
+  social,
+  socialView,
+  chat,
+  result,
+  emptyStats,
+  emojis,
+  type SocialState,
+  type Stats,
+  type MatchMode,
+} from "../game-social";
 import type { RoomListing } from "../game-client/protocol";
 import {
   newToken,
@@ -52,6 +63,7 @@ interface Room {
   members: Member[];
   game?: Game;
   requests: Record<string, boolean>;
+  social?: SocialState;
 }
 const dataDir = process.env.DATA_DIR || ".data";
 mkdirSync(dataDir, { recursive: true });
@@ -123,13 +135,32 @@ const io = new Server(server, {
   },
 });
 const presence = new Map<string, Set<string>>();
-const queue: string[] = [];
+const queue: string[] = []; // Legacy clients retain their existing ten-second queue.
 let matchAt = 0;
+const queues: Record<MatchMode, string[]> = { quick: [], normal: [] };
+const queuedAt = new Map<string, number>();
+const emojiCatalog = process.env.EMOJI_CATALOG_FILE
+  ? emojis(
+      JSON.parse(readFileSync(resolve(process.env.EMOJI_CATALOG_FILE), "utf8")),
+    )
+  : undefined;
+if (process.env.EMOJI_STATIC_DIR)
+  app.use(
+    "/site-emojis",
+    express.static(resolve(process.env.EMOJI_STATIC_DIR), {
+      index: false,
+      dotfiles: "deny",
+    }),
+  );
 function persist(r: Room) {
   saveRoom.run(r.id, JSON.stringify(r));
 }
 function findRoom(id: string) {
-  return [...rooms.values()].find((r) => r.members.some((m) => m.id === id));
+  return [...rooms.values()].find(
+    (r) =>
+      r.members.some((m) => m.id === id) ||
+      social(r).spectators.some((p) => p.id === id),
+  );
 }
 function session(cookie?: string) {
   const token = sessionToken(cookie);
@@ -244,7 +275,93 @@ app.get("/api/me", async (req, res) => {
   }
 });
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+db.exec(
+  "CREATE TABLE IF NOT EXISTS game_results(game_id TEXT NOT NULL,user_id TEXT NOT NULL,size INTEGER NOT NULL,rank INTEGER NOT NULL,won INTEGER NOT NULL,finished_at INTEGER NOT NULL,PRIMARY KEY(game_id,user_id))",
+);
+const statsCache = new Map<string, Stats>();
+function statsFor(id: string): Stats {
+  const cached = statsCache.get(id);
+  if (cached) return cached;
+  const stats = emptyStats();
+  for (const row of db
+    .prepare(
+      "SELECT size,COUNT(*) games,SUM(won) wins FROM game_results WHERE user_id=? GROUP BY size",
+    )
+    .all(id)) {
+    const size = Number(row.size) as 2 | 3 | 4;
+    if (![2, 3, 4].includes(size)) continue;
+    stats[size] = {
+      games: Number(row.games),
+      wins: Number(row.wins),
+      losses: Number(row.games) - Number(row.wins),
+    };
+  }
+  statsCache.set(id, stats);
+  return stats;
+}
+function recordResults(r: Room) {
+  const s = social(r);
+  if (!r.game || r.game.phase !== "finished" || s.resultsRecorded) return;
+  db.exec("SAVEPOINT record_results");
+  try {
+    for (const p of r.game.players) {
+      const record = result(r.game, p.id, r.id);
+      if (!record) continue;
+      db.prepare("INSERT OR IGNORE INTO game_results VALUES (?,?,?,?,?,?)").run(
+        r.id,
+        p.id,
+        record.size,
+        record.rank,
+        record.win ? 1 : 0,
+        Date.now(),
+      );
+      statsCache.delete(p.id);
+    }
+    db.exec("RELEASE record_results");
+    s.resultsRecorded = true;
+  } catch (e) {
+    db.exec("ROLLBACK TO record_results; RELEASE record_results");
+    statsCache.clear();
+    throw e;
+  }
+}
+app.get("/api/profile/:id", async (req, res) => {
+  try {
+    const me = session(req.headers.cookie);
+    if (!me || (external && (await external.resolve(req))?.id !== me.id)) {
+      res.status(401).json({ error: "로그인이 필요합니다." });
+      return;
+    }
+    const id = String(req.params.id);
+    const account = db
+      .prepare(
+        "SELECT name,profile FROM sessions WHERE id=? ORDER BY expires DESC LIMIT 1",
+      )
+      .get(id) as { name: string; profile?: string } | undefined;
+    if (!account) {
+      res.status(404).json({ error: "프로필을 찾을 수 없습니다." });
+      return;
+    }
+    const linked = await external?.profile?.(id);
+    const safe = (v: unknown) =>
+      typeof v === "string" && (/^https:\/\//.test(v) || /^\/(?!\/)/.test(v))
+        ? v
+        : undefined;
+    res.json({
+      id,
+      name: linked?.name ? nickname(linked.name) : account.name,
+      profile: safe(linked?.profile) || account.profile,
+      url: safe(linked?.url),
+      stats: statsFor(id),
+      source: "server",
+    });
+  } catch {
+    res.status(500).json({ error: "프로필을 불러오지 못했습니다." });
+  }
+});
 function publicRoom(r: Room, id: string) {
+  const s = social(r),
+    observer = s.spectators.find((p) => p.id === id);
   return {
     id: r.id,
     version: r.version,
@@ -254,26 +371,37 @@ function publicRoom(r: Room, id: string) {
     max: r.max,
     allowAI: r.allowAI,
     minutes: r.minutes,
-    members: r.members,
-    game: r.game ? view(r.game, id) : undefined,
+    members: r.members.map((m) => ({
+      ...m,
+      stats: m.ai ? emptyStats() : statsFor(m.id),
+    })),
+    ...socialView(s, id),
+    game: r.game ? view(r.game, observer?.watching || id) : undefined,
+    result: r.game && !observer ? result(r.game, id, r.id) : undefined,
   };
 }
 function roomListings(): RoomListing[] {
   return [...rooms.values()]
-    .filter(
-      (r) =>
-        !r.game && r.members.some((m) => m.id === r.host && !m.offlineSince),
+    .filter((r) =>
+      r.game
+        ? r.game.phase !== "finished"
+        : r.members.some((m) => m.id === r.host && !m.offlineSince),
     )
     .map((r) => ({
       id: r.id,
       code: r.code,
       name: r.name,
-      hostName: r.members.find((m) => m.id === r.host)!.name,
+      hostName:
+        r.members.find((m) => m.id === r.host)?.name || r.members[0].name,
       count: r.members.length,
       max: r.max,
       allowAI: r.allowAI,
       minutes: r.minutes,
       locked: !!r.password,
+      playing: !!r.game,
+      playerNames: r.members.map((m) => m.name),
+      startedAt: social(r).startedAt,
+      mode: social(r).mode,
     }))
     .sort(
       (a, b) =>
@@ -291,17 +419,30 @@ function announceRooms() {
 }
 function send(id: string) {
   const r = findRoom(id);
+  const mode: MatchMode | undefined = queues.quick.includes(id)
+    ? "quick"
+    : queues.normal.includes(id)
+      ? "normal"
+      : undefined;
+  const waiting = mode ? queues[mode] : queue;
   io.to("user:" + id).emit("state", {
     room: r ? publicRoom(r, id) : null,
-    matching: queue.includes(id),
-    count: queue.length,
+    matching: waiting.includes(id),
+    count: waiting.length,
     matchAt,
+    matchMode: mode,
+    matchStartedAt:
+      mode && waiting.length
+        ? Math.min(...waiting.map((i) => queuedAt.get(i) ?? Date.now()))
+        : undefined,
     serverNow: Date.now(),
   });
 }
 function broadcast(r: Room) {
+  recordResults(r);
   persist(r);
-  for (const m of r.members) if (!m.ai) send(m.id);
+  for (const m of [...r.members, ...social(r).spectators])
+    if (!("ai" in m && m.ai)) send(m.id);
   announceRooms();
 }
 function roomChanged(r: Room) {
@@ -309,9 +450,14 @@ function roomChanged(r: Room) {
   broadcast(r);
 }
 function queueState() {
-  for (const id of queue) send(id);
+  for (const id of [...queue, ...queues.quick, ...queues.normal]) send(id);
 }
 function cancel(id: string) {
+  for (const mode of ["quick", "normal"] as const) {
+    const j = queues[mode].indexOf(id);
+    if (j >= 0) queues[mode].splice(j, 1);
+  }
+  queuedAt.delete(id);
   const i = queue.indexOf(id);
   if (i >= 0) queue.splice(i, 1);
   if (!queue.length) matchAt = 0;
@@ -340,6 +486,7 @@ function newRoom(
     password: password ? passwordHash(password) : undefined,
     members: [{ ...user, ready: false }],
     requests: {},
+    social: { ...social({}), emojis: emojiCatalog || social({}).emojis },
   };
   rooms.set(r.id, r);
   return r;
@@ -375,7 +522,8 @@ io.on("connection", (socket) => {
   presence.set(user.id, set);
   const room = findRoom(user.id);
   if (room) {
-    room.members.find((m) => m.id === user.id)!.offlineSince = undefined;
+    const member = room.members.find((m) => m.id === user.id);
+    if (member) member.offlineSince = undefined;
     broadcast(room);
   } else send(user.id);
 
@@ -434,7 +582,11 @@ io.on("connection", (socket) => {
       if (
         ["ready", "ai", "kick", "start", "leave"].includes(a.type) &&
         r &&
-        a.version !== r.version
+        a.version !== r.version &&
+        !(
+          a.type === "leave" &&
+          social(r).spectators.some((p) => p.id === user.id)
+        )
       )
         throw new Error("방 상태가 변경됐습니다. 다시 시도하세요.");
       const touched =
@@ -447,19 +599,33 @@ io.on("connection", (socket) => {
       const prior = touched ? structuredClone(touched) : undefined;
       const ids = new Set(rooms.keys()),
         priorQueue = [...queue],
-        priorMatchAt = matchAt;
+        priorMatchAt = matchAt,
+        priorQueues = structuredClone(queues),
+        priorQueuedAt = new Map(queuedAt);
       restore = () => {
         for (const id of rooms.keys()) if (!ids.has(id)) rooms.delete(id);
         if (prior) rooms.set(prior.id, prior);
         queue.splice(0, queue.length, ...priorQueue);
         matchAt = priorMatchAt;
+        queues.quick = priorQueues.quick;
+        queues.normal = priorQueues.normal;
+        queuedAt.clear();
+        for (const [id, at] of priorQueuedAt) queuedAt.set(id, at);
       };
       db.exec("BEGIN IMMEDIATE");
       inTransaction = true;
       if (a.type === "match") {
         if (r) throw new Error("현재 방에서 먼저 나가세요.");
-        if (!queue.includes(user.id)) queue.push(user.id);
-        if (!matchAt) matchAt = now + 10000;
+        if (a.mode !== undefined && a.mode !== "quick" && a.mode !== "normal")
+          throw new Error("매칭 종류를 선택하세요.");
+        if (a.mode) {
+          cancel(user.id);
+          queues[a.mode as MatchMode].push(user.id);
+          queuedAt.set(user.id, now);
+        } else {
+          if (!queue.includes(user.id)) queue.push(user.id);
+          if (!matchAt) matchAt = now + 10000;
+        }
         queueState();
       } else if (a.type === "cancel") {
         cancel(user.id);
@@ -481,8 +647,16 @@ io.on("connection", (socket) => {
         const target = [...rooms.values()].find(
           (x) => x.code === String(a.code).toUpperCase(),
         );
-        if (!target || target.game || target.members.length >= target.max)
+        if (
+          !target ||
+          target.game?.phase === "finished" ||
+          (!target.game && target.members.length >= target.max)
+        )
           throw new Error("입장할 수 없는 방입니다.");
+        if (target.game && !a.spectate)
+          throw new Error("진행 중인 방은 관전으로 입장하세요.");
+        if (target.game && social(target).spectators.length >= 50)
+          throw new Error("관전 정원이 찼습니다.");
         if (target.kicked?.includes(user.id))
           throw new Error("이 방에서 강퇴되어 다시 참가할 수 없습니다.");
         if (
@@ -492,23 +666,62 @@ io.on("connection", (socket) => {
         )
           throw new Error("비밀번호가 일치하지 않습니다.");
         cancel(user.id);
-        target.members.push({ ...user, ready: false });
+        if (target.game)
+          social(target).spectators.push({
+            ...user,
+            watching: target.members[0].id,
+          });
+        else target.members.push({ ...user, ready: false });
         roomChanged(target);
       } else {
         if (!r) throw new Error("방에 먼저 참가하세요.");
-        if (a.type === "leave") {
-          if (r.game && r.game.phase !== "finished")
-            throw new Error(
-              "진행 중인 게임은 재접속할 수 있습니다. 종료 후 나가세요.",
-            );
-          r.members = r.members.filter((m) => m.id !== user.id);
-          r.host = r.members.find((m) => !m.ai)?.id || "";
-          if (!r.host) {
-            rooms.delete(r.id);
-            db.prepare("DELETE FROM rooms WHERE id=?").run(r.id);
-          } else roomChanged(r);
+        const s = social(r),
+          observer = s.spectators.find((p) => p.id === user.id),
+          member = r.members.find((p) => p.id === user.id);
+        if (a.type === "chat") {
+          chat(s, observer || member!, !!observer, a, now);
+          broadcast(r);
+        } else if (a.type === "watch") {
+          if (!observer || !r.game?.players.some((p) => p.id === a.player))
+            throw new Error("관전할 대원을 선택하세요.");
+          observer.watching = a.player;
           send(user.id);
-        } else if (a.type === "ready") {
+          persist(r);
+        } else if (a.type === "kick-spectator") {
+          if (s.mode !== "private" || r.host !== user.id)
+            throw new Error("개인 방의 방장만 관전자를 내보낼 수 있습니다.");
+          if (!s.spectators.some((p) => p.id === a.member))
+            throw new Error("관전자를 찾을 수 없습니다.");
+          s.spectators = s.spectators.filter((p) => p.id !== a.member);
+          (r.kicked ??= []).push(a.member);
+          broadcast(r);
+          send(a.member);
+          io.to("user:" + a.member).emit(
+            "kicked",
+            "방장이 관전자를 내보냈습니다.",
+          );
+        } else if (a.type === "leave") {
+          if (observer) {
+            s.spectators = s.spectators.filter((p) => p.id !== user.id);
+            broadcast(r);
+            send(user.id);
+          } else {
+            if (r.game && r.game.phase !== "finished")
+              throw new Error(
+                "진행 중인 게임은 재접속할 수 있습니다. 종료 후 나가세요.",
+              );
+            r.members = r.members.filter((m) => m.id !== user.id);
+            r.host = r.members.find((m) => !m.ai)?.id || "";
+            if (!r.host) {
+              rooms.delete(r.id);
+              db.prepare("DELETE FROM rooms WHERE id=?").run(r.id);
+              for (const spectator of social(r).spectators) send(spectator.id);
+            } else roomChanged(r);
+            send(user.id);
+          }
+        } else if (observer)
+          throw new Error("관전자는 게임을 조작할 수 없습니다.");
+        else if (a.type === "ready") {
           if (r.game) throw new Error("게임이 이미 시작됐습니다.");
           const m = r.members.find((m) => m.id === user.id)!;
           if (typeof a.ready !== "boolean")
@@ -562,6 +775,7 @@ io.on("connection", (socket) => {
           )
             throw new Error("2명 이상, 전원 준비가 필요합니다.");
           r.game = createGame(r.members, now, randomInt, r.minutes);
+          social(r).startedAt = now;
           roomChanged(r);
         } else if (a.type === "action") {
           if (
@@ -611,6 +825,7 @@ io.on("connection", (socket) => {
       if (inTransaction) {
         db.exec("ROLLBACK");
         restore();
+        statsCache.clear();
         announceRooms();
         queueState();
       }
@@ -626,7 +841,12 @@ io.on("connection", (socket) => {
     cancel(user.id);
     const r = findRoom(user.id);
     if (r) {
-      r.members.find((m) => m.id === user.id)!.offlineSince = Date.now();
+      const observer = social(r).spectators.find((p) => p.id === user.id);
+      if (observer)
+        social(r).spectators = social(r).spectators.filter(
+          (p) => p.id !== user.id,
+        );
+      else r.members.find((m) => m.id === user.id)!.offlineSince = Date.now();
       broadcast(r);
     }
   });
@@ -634,6 +854,32 @@ io.on("connection", (socket) => {
 let lastAI = 0;
 setInterval(() => {
   const now = Date.now();
+  let matchedNewQueue = false;
+  for (const mode of ["quick", "normal"] as const) {
+    const size = mode === "quick" ? 2 : 4;
+    while (queues[mode].length >= size) {
+      matchedNewQueue = true;
+      const ids = queues[mode].splice(0, size);
+      const people = ids.map(
+        (id) =>
+          db
+            .prepare(
+              "SELECT id,name,profile FROM sessions WHERE id=? ORDER BY expires DESC LIMIT 1",
+            )
+            .get(id) as { id: string; name: string },
+      );
+      const r = newRoom(people[0], size, false, 30, "");
+      r.host = "";
+      r.name = mode === "quick" ? "빠른게임 탐사대" : "일반게임 탐사대";
+      r.members = people.map((p) => ({ ...p, ready: true }));
+      social(r).mode = mode;
+      social(r).startedAt = now;
+      r.game = createGame(r.members, now, randomInt, 30);
+      for (const id of ids) queuedAt.delete(id);
+      broadcast(r);
+    }
+  }
+  if (matchedNewQueue) queueState();
   if (matchAt && now >= matchAt) {
     while (queue.length >= 2) {
       const ids = queue.splice(0, 4);
@@ -648,6 +894,9 @@ setInterval(() => {
       const r = newRoom(people[0], people.length, false, 30, "");
       r.members = people.map((p) => ({ ...p, ready: true }));
       r.game = createGame(r.members, now, randomInt, 30);
+      social(r).mode = r.members.length === 2 ? "quick" : "normal";
+      social(r).startedAt = now;
+      r.host = "";
       broadcast(r);
     }
     matchAt = queue.length ? now + 10000 : 0;

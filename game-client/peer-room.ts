@@ -14,10 +14,23 @@ import {
 } from "../game-core";
 import { decide } from "../game-ai";
 import { browserRandom } from "./solo";
+import {
+  social,
+  socialView,
+  chat,
+  result,
+  addResult,
+  emptyStats,
+  validStats,
+  type SocialState,
+  type MatchMode,
+  type Stats,
+} from "../game-social";
+import { localStats } from "./stats";
 import type { Room, Member, Snapshot } from "./protocol";
-type Identity = { id: string; name: string };
-type HostedRoom = Omit<Room, "game"> & { game?: Game };
-const FINDER = "earthmarble-match-lobby-v1";
+type Identity = { id: string; name: string; profile?: string; stats?: Stats };
+type HostedRoom = Omit<Room, "game"> & { game?: Game; social?: SocialState };
+const FINDER = (mode: MatchMode) => `earthmarble-match-${mode}-v2`;
 const levels = ["easy", "normal", "hard"];
 export class PeerRoomController {
   private peer?: Peer;
@@ -48,6 +61,9 @@ export class PeerRoomController {
     serverNow: Date.now(),
   };
   private matching = false;
+  private matchMode: MatchMode = "quick";
+  private matchStartedAt = 0;
+  private rejoining = false;
   private matchAt = 0;
   private dead = false;
   private abort = new AbortController();
@@ -70,25 +86,43 @@ export class PeerRoomController {
     for (const fn of this.listeners) fn(s);
   }
   private stateFor(id: string): Snapshot {
-    const r = this.hosted;
+    const r = this.hosted,
+      s = r ? social(r) : undefined;
+    const spectator = s?.spectators.find((p) => p.id === id);
     return {
       room: this.matching
         ? null
         : r
           ? {
-              ...r,
+              id: r.id,
+              version: r.version,
+              code: r.code,
+              name: r.name,
+              host: r.host,
+              max: r.max,
+              minutes: r.minutes,
+              allowAI: r.allowAI,
               members: r.members.map((m) => ({ ...m })),
-              game: r.game ? view(r.game, id) : undefined,
+              connection: r.connection,
+              ...socialView(s!, id),
+              game: r.game
+                ? view(r.game, spectator?.watching || id)
+                : undefined,
+              result:
+                r.game && !spectator ? result(r.game, id, r.id) : undefined,
             }
           : null,
       matching: this.matching,
       count: this.matching ? (r?.members.length ?? 1) : 0,
       matchAt: this.matchAt,
+      matchMode: this.matchMode,
+      matchStartedAt: this.matchStartedAt,
       serverNow: Date.now(),
     };
   }
   private broadcast() {
     if (this.dead) return;
+    this.finalizeRecords();
     this.syncDirectory();
     this.emit(this.stateFor(this.me.id));
     for (const { conn, identity } of this.peers.values())
@@ -97,29 +131,42 @@ export class PeerRoomController {
   }
   private syncDirectory() {
     const r = this.hosted;
-    if (!r || r.game || this.matching || !this.peer || this.peer.destroyed) {
+    if (
+      !r ||
+      r.game?.phase === "finished" ||
+      this.matching ||
+      !this.peer ||
+      this.peer.destroyed
+    ) {
       this.directory?.close();
       this.directory = undefined;
       return;
     }
-    if (!this.directory)
+    if (!this.directory) {
+      r.connection = "connecting";
       this.directory = new RoomDirectory((_rooms, status) => {
-        if (this.dead || !this.hosted || this.hosted.game) return;
+        if (this.dead || !this.hosted) return;
         if (this.hosted.connection !== status) {
           this.hosted.connection = status;
           this.broadcast();
         }
       }, this.peer);
+    }
     this.directory.setRoom({
       id: r.id,
       code: r.code,
       name: r.name,
-      hostName: r.members.find((m) => m.id === r.host)!.name,
+      hostName:
+        r.members.find((m) => m.id === r.host)?.name || r.members[0].name,
       count: r.members.length,
       max: r.max,
       allowAI: r.allowAI,
       minutes: r.minutes,
       locked: !!this.password,
+      playing: !!r.game,
+      playerNames: r.members.map((m) => m.name),
+      startedAt: social(r).startedAt,
+      mode: social(r).mode,
     });
   }
   private async boot(id = `earthmarble-player-${crypto.randomUUID()}`) {
@@ -149,12 +196,18 @@ export class PeerRoomController {
       id: crypto.randomUUID(),
       version: 0,
       code,
-      name: auto ? "자동 매칭 탐사대" : `${this.me.name}님의 방`,
-      host: this.me.id,
+      name: auto
+        ? this.matchMode === "quick"
+          ? "빠른게임 탐사대"
+          : "일반게임 탐사대"
+        : `${this.me.name}님의 방`,
+      host: auto ? "" : this.me.id,
       max,
       minutes,
       allowAI,
-      members: [{ ...this.me, ready: auto }],
+      connection: "connecting",
+      members: [{ ...this.me, stats: localStats(this.me.id), ready: auto }],
+      social: { ...social({}), mode: auto ? this.matchMode : "private" },
     };
   }
   async create(a: Record<string, unknown>) {
@@ -184,7 +237,7 @@ export class PeerRoomController {
         this.broadcast();
       });
   }
-  async join(code: unknown, password: unknown) {
+  async join(code: unknown, password: unknown, spectate = false) {
     if (typeof code !== "string" || !/^[A-Z0-9]{6}$/i.test(code.trim()))
       throw new Error("입장할 방을 다시 선택하세요.");
     const peer = await this.boot();
@@ -193,9 +246,14 @@ export class PeerRoomController {
       `earthmarble-room-${code.trim().toUpperCase()}`,
       typeof password === "string" ? password : "",
       false,
+      spectate,
     );
   }
-  async match() {
+  async match(mode: MatchMode = "quick") {
+    if (mode !== "quick" && mode !== "normal")
+      throw new Error("매칭 종류를 선택하세요.");
+    this.matchMode = mode;
+    this.matchStartedAt = Date.now();
     this.matching = true;
     this.emit({
       room: null,
@@ -203,20 +261,33 @@ export class PeerRoomController {
       count: 0,
       matchAt: Date.now() + 10000,
       serverNow: Date.now(),
+      matchMode: this.matchMode,
+      matchStartedAt: this.matchStartedAt,
     });
-    const peer = await this.boot();
+    const code = crypto
+      .randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 6)
+      .toUpperCase();
+    const peer = await this.boot(`earthmarble-room-${code}`);
     await this.findMatch(peer);
   }
   private async findMatch(peer: Peer) {
     if (this.dead) return;
     try {
-      const finder = await openPeer(FINDER, this.abort.signal);
+      const finder = await openPeer(FINDER(this.matchMode), this.abort.signal);
       if (this.dead) {
         finder.destroy();
         return;
       }
       this.finder = finder;
-      this.makeRoom("MATCH", 4, 30, false, true);
+      this.makeRoom(
+        peer.id.replace("earthmarble-room-", ""),
+        this.matchMode === "quick" ? 2 : 4,
+        30,
+        false,
+        true,
+      );
       this.matching = true;
       this.matchAt = Date.now() + 10000;
       finder.on("error", () => {});
@@ -235,7 +306,7 @@ export class PeerRoomController {
         );
       let directory: DataConnection | undefined;
       try {
-        directory = await connect(peer, FINDER);
+        directory = await connect(peer, FINDER(this.matchMode));
         const host = await new Promise<string>((resolve, reject) => {
           const timer = setTimeout(
             () => reject(new Error("매칭 안내 시간이 초과됐습니다.")),
@@ -263,6 +334,7 @@ export class PeerRoomController {
     host: string,
     password: string,
     auto: boolean,
+    spectate = false,
   ) {
     const c = await connect(peer, host);
     this.upstream = c;
@@ -280,6 +352,10 @@ export class PeerRoomController {
           typeof data.state.serverNow === "number"
         ) {
           this.matching = !!data.state.matching;
+          if (this.matching && data.state.matchStartedAt)
+            this.matchStartedAt =
+              Date.now() -
+              Math.max(0, data.state.serverNow - data.state.matchStartedAt);
           this.emit(data.state);
           if (!admitted) {
             admitted = true;
@@ -296,19 +372,22 @@ export class PeerRoomController {
               : request.resolve();
           }
         } else if (data?.type === "kicked") {
-          this.fail("방장이 대기실에서 내보냈습니다.");
+          this.fail("방장이 방에서 내보냈습니다.");
         } else if (data?.type === "reject") {
           clearTimeout(timer);
           reject(new Error(data.error || "참가할 수 없습니다."));
         } else if (
           data?.type === "closed" &&
           this.snapshot.room?.game?.phase !== "finished"
-        )
-          this.fail(data.error || "방장이 방을 종료했습니다.");
+        ) {
+          if (this.matching) this.resumeMatch();
+          else this.fail(data.error || "방장이 방을 종료했습니다.");
+        }
       });
       c.on("close", () => {
         clearTimeout(timer);
         if (!admitted) reject(new Error("참가 연결이 닫혔습니다."));
+        else if (!this.dead && this.matching) this.resumeMatch();
         else if (!this.dead && this.snapshot.room?.game?.phase !== "finished")
           this.fail(
             "방장과 연결이 끊겼습니다. 방장이 창을 열어 두어야 합니다.",
@@ -317,8 +396,27 @@ export class PeerRoomController {
       c.on("error", () => {
         if (!this.dead) this.fail("온라인 연결 오류가 발생했습니다.");
       });
-      c.send({ type: "hello", identity: this.me, password, auto });
+      c.send({
+        type: "hello",
+        identity: { ...this.me, stats: localStats(this.me.id) },
+        password,
+        auto,
+        spectate,
+        matchMode: this.matchMode,
+      });
     });
+  }
+  private resumeMatch() {
+    if (this.dead || this.rejoining || !this.peer) return;
+    this.rejoining = true;
+    const old = this.upstream;
+    this.upstream = undefined;
+    old?.close();
+    void this.findMatch(this.peer)
+      .catch(() => this.fail("매칭에 다시 연결하지 못했습니다."))
+      .finally(() => {
+        this.rejoining = false;
+      });
   }
   private accept(c: DataConnection) {
     let identity: Identity | undefined;
@@ -344,20 +442,40 @@ export class PeerRoomController {
           error = "방 비밀번호가 다릅니다.";
         else if (this.kicked.has(p.id))
           error = "이 방에서 강퇴되어 다시 참가할 수 없습니다.";
-        else if (r.game) error = "이미 시작한 방입니다.";
-        else if (r.members.length >= r.max) error = "방이 가득 찼습니다.";
-        else if (r.members.some((m) => m.id === p.id))
+        else if (
+          r.members.some((m) => m.id === p.id) ||
+          social(r).spectators.some((m) => m.id === p.id)
+        )
           error = "이미 참가한 탐사대원입니다. 다른 브라우저를 사용하세요.";
-        else if (!!data.auto !== this.matching)
+        else if (r.game && !data.spectate)
+          error = "진행 중인 방은 관전으로 입장하세요.";
+        else if (!r.game && r.members.length >= r.max)
+          error = "방이 가득 찼습니다.";
+        else if (r.game && social(r).spectators.length >= 50)
+          error = "관전 정원이 찼습니다.";
+        else if (
+          !!data.auto !== this.matching ||
+          (data.auto && data.matchMode !== this.matchMode)
+        )
           error = "현재 매칭이 끝났습니다.";
         if (error) {
           c.send({ type: "reject", error });
           setTimeout(() => c.close(), 300);
           return;
         }
-        identity = { id: p.id, name: p.name.trim() };
+        identity = {
+          id: p.id,
+          name: p.name.trim(),
+          stats: validStats(p.stats) ? p.stats : emptyStats(),
+        };
         this.peers.set(c.peer, { conn: c, identity });
-        r!.members.push({ ...identity, ready: this.matching });
+        if (r!.game)
+          social(r!).spectators.push({
+            id: identity.id,
+            name: identity.name,
+            watching: r!.members[0].id,
+          });
+        else r!.members.push({ ...identity, ready: this.matching });
         r!.version++;
         if (this.matching && r!.members.length === r!.max) {
           this.finder?.destroy();
@@ -402,6 +520,9 @@ export class PeerRoomController {
       this.peers.delete(c.peer);
       const r = this.hosted;
       if (!r) return;
+      social(r).spectators = social(r).spectators.filter(
+        (s) => s.id !== identity!.id,
+      );
       if (!r.game) r.members = r.members.filter((m) => m.id !== identity!.id);
       else {
         const m = r.members.find((m) => m.id === identity!.id);
@@ -436,7 +557,7 @@ export class PeerRoomController {
   private perform(actor: string, a: Record<string, unknown>) {
     const r = this.hosted!;
     if (a.type === "leave") {
-      if (actor === r.host) {
+      if (actor === this.me.id) {
         this.close();
         this.exit();
         return;
@@ -447,6 +568,41 @@ export class PeerRoomController {
       peer?.conn.close();
       return;
     }
+    const s = social(r),
+      observer = s.spectators.find((p) => p.id === actor),
+      member = r.members.find((p) => p.id === actor);
+    if (!observer && !member) throw new Error("참가자가 아닙니다.");
+    if (a.type === "chat") {
+      chat(s, observer || member!, !!observer, a, Date.now());
+      this.broadcast();
+      return;
+    }
+    if (a.type === "watch") {
+      if (!observer || !r.game?.players.some((p) => p.id === a.player))
+        throw new Error("관전할 대원을 선택하세요.");
+      observer.watching = String(a.player);
+      this.broadcast();
+      return;
+    }
+    if (a.type === "kick-spectator") {
+      if (s.mode !== "private" || r.host !== actor)
+        throw new Error("개인 방의 방장만 관전자를 내보낼 수 있습니다.");
+      if (!s.spectators.some((p) => p.id === a.member))
+        throw new Error("관전자를 찾을 수 없습니다.");
+      s.spectators = s.spectators.filter((p) => p.id !== a.member);
+      this.kicked.add(String(a.member));
+      const entry = [...this.peers.entries()].find(
+        ([, p]) => p.identity.id === a.member,
+      );
+      if (entry) {
+        this.peers.delete(entry[0]);
+        entry[1].conn.send({ type: "kicked" });
+        setTimeout(() => entry[1].conn.close(), 300);
+      }
+      this.broadcast();
+      return;
+    }
+    if (observer) throw new Error("관전자는 게임을 조작할 수 없습니다.");
     if (a.type === "action") {
       if (!r.game || a.version !== r.game.version)
         throw new Error("게임 상태가 바뀌었습니다. 다시 확인하세요.");
@@ -515,6 +671,7 @@ export class PeerRoomController {
       browserRandom,
       r.minutes,
     );
+    social(r).startedAt = Date.now();
     this.matching = false;
     this.finder?.destroy();
     this.finder = undefined;
@@ -524,8 +681,8 @@ export class PeerRoomController {
     const r = this.hosted;
     if (this.dead || !r) return;
     const now = Date.now();
-    if (this.matching && now >= this.matchAt) {
-      if (r.members.length >= 2) {
+    if (this.matching && (r.members.length >= r.max || now >= this.matchAt)) {
+      if (r.members.length >= r.max) {
         this.start();
         r.version++;
         this.broadcast();
@@ -555,6 +712,20 @@ export class PeerRoomController {
     if (changed) {
       g.version++;
       this.broadcast();
+    }
+  }
+  private finalizeRecords() {
+    const r = this.hosted;
+    if (!r?.game || r.game.phase !== "finished" || social(r).resultsRecorded)
+      return;
+    social(r).resultsRecorded = true;
+    for (const m of r.members) {
+      const record = result(r.game, m.id, r.id);
+      if (record)
+        m.stats = addResult(
+          validStats(m.stats) ? m.stats : emptyStats(),
+          record,
+        );
     }
   }
   private fail(message: string) {
