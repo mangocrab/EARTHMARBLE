@@ -2,7 +2,7 @@ import type Peer from "peerjs";
 import type { DataConnection } from "peerjs";
 import { openPeer, connect } from "./peer-transport";
 import type { RoomListing } from "./protocol";
-const DIRECTORY = "earthmarble-public-rooms-v2";
+const DIRECTORY = "earthmarble-public-rooms-v3";
 const LEASE = 18000;
 export type DirectoryStatus = "connecting" | "ready" | "offline";
 function validRoom(value: any): value is RoomListing {

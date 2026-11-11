@@ -26,6 +26,7 @@ type LocalRoom = {
   minutes: number;
   game: Game;
   social?: SocialState;
+  lounge?: Lounge;
 };
 type Lounge = Omit<Room, "game"> & { social?: SocialState };
 type Saved = {
@@ -458,6 +459,8 @@ export class SoloController {
           version: l.version + 1,
           minutes: l.minutes,
           game: createGame(users, now, this.random, l.minutes),
+          social: structuredClone(social(l)),
+          lounge: structuredClone(l),
         };
         this.lounge = null;
         this.manualPaused = false;
@@ -515,6 +518,30 @@ export class SoloController {
         if (this.manualPaused) this.pause();
         else this.resume();
         this.room.version++;
+      } else if (a.type === "return-room") {
+        if (this.room.game.phase !== "finished")
+          throw Error("게임 종료 후 돌아갈 수 있습니다.");
+        const r = this.room;
+        this.lounge = {
+          id: crypto.randomUUID(),
+          version: 0,
+          code: "SOLO",
+          name: `${this.identity.name}님의 방`,
+          host: this.identity.id,
+          max: r.lounge?.max || r.game.players.length,
+          minutes: r.minutes,
+          allowAI: true,
+          members: r.game.players.map((p) => ({
+            id: p.id,
+            name: p.name,
+            ai: p.ai,
+            ready: !!p.ai,
+          })),
+          social: r.social,
+        };
+        this.room = null;
+        this.manualPaused = false;
+        this.suspendedAt = undefined;
       } else if (a.type === "solo-reset" || a.type === "leave") {
         if (a.type === "leave" && this.room.game.phase !== "finished")
           throw new Error("새 탐사 버튼에서 현재 탐사를 종료하세요.");

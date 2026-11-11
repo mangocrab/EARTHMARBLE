@@ -191,6 +191,7 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
       ),
     )
     .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "일시정지", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "계속하기", exact: true }),
@@ -203,6 +204,7 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
   expect(before.room.game.estates[3].owner).toBe(before.identity.id);
   await page.reload();
   await expect(page.locator(".tile")).toHaveCount(40);
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "계속하기", exact: true }),
   ).toBeVisible();
@@ -212,7 +214,9 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
   );
   expect(restored.room.game.players).toEqual(before.room.game.players);
   expect(restored.room.game.drawPile).toEqual(before.room.game.drawPile);
+  await page.keyboard.press("Escape");
   await wholeBoard(page);
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "계속하기", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "일시정지", exact: true }),
@@ -223,6 +227,7 @@ test("정적 하위 경로에서 실제 이동·저장·새로고침·AI 진행�
     .getByRole("button", { name: "돌아가기" })
     .click();
   await expect(page.locator(".tile")).toHaveCount(40);
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "새 탐사", exact: true }).click();
   await page
     .getByRole("dialog")
@@ -606,12 +611,12 @@ for (const panel of ["property", "cards"]) {
     await expect(page.getByRole("dialog")).toHaveCount(1);
     await expect(page.locator(".deed")).toHaveCount(0);
     const lobby = result.getByRole("button", {
-      name: "로비로 돌아가기",
+      name: "방으로 돌아가기",
       exact: true,
     });
     await expect(lobby).toBeInViewport();
     await lobby.click();
-    await expect(page.getByRole("button", { name: "방 만들기" })).toBeVisible();
+    await expect(page.locator(".waiting h1")).toHaveText("혼자대원님의 방");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 }
@@ -693,7 +698,7 @@ test("환급소 카드 양면에 적립액을 표시하고 주사위·이동 목
   await page.getByRole("button", { name: "주사위 굴리기" }).click();
   await expect
     .poll(() =>
-      page.evaluate(() => (window as any).soundFrequencies.includes(540)),
+      page.evaluate(() => (window as any).soundFrequencies.includes(330)),
     )
     .toBe(true);
   await expect
@@ -701,7 +706,7 @@ test("환급소 카드 양면에 적립액을 표시하고 주사위·이동 목
       () =>
         page.evaluate(() =>
           (window as any).soundFrequencies.some(
-            (f: number) => f === 420 || f === 490,
+            (f: number) => f === 245 || f === 280,
           ),
         ),
       { timeout: 10000 },
@@ -896,3 +901,57 @@ test("기기 임시 프로필은 전체·최다 인원전과 2·3·4인 상세 �
   await page.getByRole("button", { name: "상세보기", exact: true }).click();
   await expect(page.locator(".records-table tbody tr")).toHaveCount(4);
 });
+
+for (const [width, height] of [
+  [320, 568],
+  [768, 1024],
+  [1024, 768],
+  [1440, 900],
+]) {
+  test(`${width}×${height}: 다크모드·채팅 미리보기·설정 접근과 화면 경계`, async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ viewport: { width, height } }),
+      page = await context.newPage();
+    try {
+      await start(page, "3");
+      await page.getByRole("button", { name: "설정", exact: true }).click();
+      await page.getByLabel("다크모드", { exact: true }).check();
+      await page.keyboard.press("Escape");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      if (width <= 1190) await wholeBoard(page);
+      expect(
+        await page.locator(".header").evaluate((e) =>
+          [...e.querySelectorAll("button")]
+            .filter((b) => b.getBoundingClientRect().width > 0)
+            .every((b) => {
+              const r = b.getBoundingClientRect();
+              return r.left >= 0 && r.right <= innerWidth + 1;
+            }),
+        ),
+      ).toBe(true);
+      await expect(
+        page.getByRole("region", { name: "최근 채팅" }),
+      ).toBeInViewport();
+      await page.getByRole("button", { name: "채팅", exact: true }).click();
+      await page
+        .getByRole("textbox", { name: "채팅 메시지" })
+        .fill("화면에서 바로 읽는 채팅");
+      await page.getByRole("button", { name: "전송", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(
+        page.getByRole("region", { name: "최근 채팅" }),
+      ).toContainText("화면에서 바로 읽는 채팅");
+      await page.screenshot({ path: `test-results-pages/dark-${width}.png` });
+      await page.reload();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      await page.locator('[data-tile="1"]').click();
+      await page.getByRole("button", { name: "카드 돌리기" }).click();
+      await page.screenshot({
+        path: `test-results-pages/dark-card-${width}.png`,
+      });
+    } finally {
+      await context.close();
+    }
+  });
+}

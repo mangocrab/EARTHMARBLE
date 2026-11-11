@@ -47,6 +47,7 @@ export type State = {
   matchStartedAt?: number;
   paused?: boolean;
   clockNow?: number;
+  reconnecting?: boolean;
 };
 export type Snapshot = State & { serverNow: number };
 

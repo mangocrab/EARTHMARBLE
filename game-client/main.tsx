@@ -120,6 +120,11 @@ function App() {
     () => matchMedia("(max-width:1190px)").matches,
   );
   const [overview, setOverview] = useState(true);
+  const [dark, setDark] = useState(() => readSetting("earth-dark") === "true");
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    writeSetting("earth-dark", String(dark));
+  }, [dark]);
   const [paymentOpen, setPaymentOpen] = useState(true);
   const [volume, updateVolume] = useState(getVolume);
   const [serverURL, setServerURL] = useState(
@@ -187,6 +192,46 @@ function App() {
             if (!peerRoom.current) setState(value);
           });
           if (document.hidden) controller.pause();
+          if (controller.identity)
+            void import("./peer-room").then(async ({ PeerRoomController }) => {
+              if (
+                disposed ||
+                !PeerRoomController.hasSession(controller.identity!.id)
+              )
+                return;
+              setLoading(true);
+              setBusy(true);
+              const online = new PeerRoomController(
+                controller.identity!,
+                (message) => {
+                  peerRoom.current = null;
+                  setState(controller.snapshot());
+                  setConnected(true);
+                  if (message) setError(message);
+                },
+              );
+              peerRoom.current = online;
+              online.subscribe((value) => {
+                clockOffset.current = value.serverNow - Date.now();
+                setNow(value.serverNow);
+                setState(value);
+                setConnected(!value.reconnecting);
+              });
+              try {
+                await online.restore();
+              } catch {
+                online.close(false);
+                peerRoom.current = null;
+                setState(controller.snapshot());
+                setConnected(true);
+                setError(
+                  "방 복구를 기다리고 있습니다. 방장이 돌아온 뒤 새로고침해 다시 연결하세요.",
+                );
+              } finally {
+                setLoading(false);
+                setBusy(false);
+              }
+            });
         })
         .catch(() => {
           setError("게임을 불러오지 못했습니다. 페이지를 새로고침하세요.");
@@ -204,7 +249,10 @@ function App() {
       if (document.hidden) solo.current?.pause();
       else solo.current?.resume();
     };
-    const save = () => solo.current?.save();
+    const save = () => {
+      solo.current?.save();
+      peerRoom.current?.suspend();
+    };
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("pagehide", save);
     const i = setInterval(() => setNow(Date.now() + clockOffset.current), 200);
@@ -706,6 +754,8 @@ function App() {
     peerRoom.current = controller;
     controller.subscribe((snapshot) => {
       clockOffset.current = snapshot.serverNow - Date.now();
+      setNow(snapshot.serverNow);
+      setConnected(!snapshot.reconnecting);
       setState(snapshot);
     });
     return controller;
@@ -1033,7 +1083,8 @@ function App() {
               aria-label="채팅"
               onClick={() => setPanel("chat")}
             >
-              ☏
+              <span aria-hidden="true">☏</span>
+              <span className="social-label">채팅</span>
             </button>
           )}
           {room &&
@@ -1044,7 +1095,8 @@ function App() {
                 aria-label="관전 목록"
                 onClick={() => setPanel("observers")}
               >
-                ◉<small>{room.spectators?.length || 0}</small>
+                <span className="social-label">관전자</span>
+                <small>{room.spectators?.length || 0}</small>
               </button>
             )}
           <button
@@ -1346,11 +1398,13 @@ function App() {
                   ready: !room.members.find((m) => m.id === me?.id)?.ready,
                 })
               }
-              disabled={busy}
+              disabled={busy || isSpectator || !connected}
             >
-              {room.members.find((m) => m.id === me?.id)?.ready
-                ? "준비 취소"
-                : "준비 완료"}
+              {isSpectator
+                ? "관전 중"
+                : room.members.find((m) => m.id === me?.id)?.ready
+                  ? "준비 취소"
+                  : "준비 완료"}
             </button>
             {room.host === me?.id && room.allowAI && (
               <>
@@ -1383,7 +1437,7 @@ function App() {
                 className="primary"
                 disabled={
                   room.members.length < 2 ||
-                  !room.members.every((m) => m.ready) ||
+                  !room.members.every((m) => m.ready && !m.offlineSince) ||
                   busy
                 }
                 onClick={() => command({ type: "start" })}
@@ -1560,7 +1614,11 @@ function App() {
                 className={`board-scroll ${compact && overview ? "overview" : ""}`}
                 style={
                   compact && overview
-                    ? { width: boardPixels, height: boardPixels }
+                    ? ({
+                        width: boardPixels,
+                        height: boardPixels,
+                        "--tile-font": `${Math.max(7, Math.min(10, boardPixels / 27))}px`,
+                      } as React.CSSProperties)
                     : undefined
                 }
               >
@@ -1913,6 +1971,46 @@ function App() {
           </aside>
         </main>
       )}
+      {room && (
+        <section
+          className={`chat-preview ${g ? "in-game" : ""}`}
+          aria-label="최근 채팅"
+        >
+          <button
+            onClick={() => setPanel("chat")}
+            className="chat-preview-open"
+          >
+            <b>채팅</b>
+            <span>
+              {room.mode && room.mode !== "private"
+                ? "퀵채팅"
+                : "메시지 보내기"}{" "}
+              ↗
+            </span>
+          </button>
+          <div className="chat-preview-lines" aria-live="polite">
+            {state.reconnecting ? (
+              <p role="status">방 연결 복구 중 · 잠시만 기다려 주세요.</p>
+            ) : (room.chat || []).length ? (
+              (room.chat || []).slice(-2).map((m) => (
+                <p key={m.id}>
+                  {m.spectator && <span className="spectator-badge">관전</span>}{" "}
+                  <b>{m.name}</b>{" "}
+                  <span>
+                    {m.emoji?.url
+                      ? `〔${m.emoji.label} 이모티콘〕`
+                      : m.emoji?.text || m.text}
+                  </span>
+                </p>
+              ))
+            ) : (
+              <p className="fine">
+                아직 채팅이 없습니다. 채팅을 눌러 인사해 보세요.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
       <footer className="footer">
         <span>EARTH MARBLE © {new Date().getFullYear()}</span>
         <span>지구를 이해하는 가장 즐거운 한 바퀴.</span>
@@ -1957,9 +2055,20 @@ function App() {
               <button
                 className="primary"
                 disabled={busy || !connected}
-                onClick={() => command({ type: "leave" })}
+                onClick={() =>
+                  command({
+                    type:
+                      room?.mode === "private" && !isSpectator
+                        ? "return-room"
+                        : "leave",
+                  })
+                }
               >
-                로비로 돌아가기
+                {isSpectator
+                  ? "관전 종료"
+                  : room?.mode === "private"
+                    ? "방으로 돌아가기"
+                    : "로비로 돌아가기"}
               </button>
             </div>
           </section>
@@ -2415,6 +2524,28 @@ function App() {
               )}
               {panel === "settings" && (
                 <>
+                  {SOLO && g && !peerRoom.current && (
+                    <div className="sound-actions">
+                      <button
+                        onClick={() =>
+                          command({ type: "solo-pause", paused: !state.paused })
+                        }
+                      >
+                        {state.paused ? "계속하기" : "일시정지"}
+                      </button>
+                      <button onClick={() => setPanel("solo-reset")}>
+                        새 탐사
+                      </button>
+                    </div>
+                  )}
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={dark}
+                      onChange={(e) => setDark(e.target.checked)}
+                    />{" "}
+                    다크모드
+                  </label>
                   {me && (
                     <button onClick={() => void openProfile(me.id)}>
                       내 프로필과 전적

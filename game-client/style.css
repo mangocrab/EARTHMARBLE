@@ -3526,3 +3526,376 @@ small {
     display: none;
   }
 }
+/* Shared social controls have visible labels and a persistent message preview. */
+.header .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.social-label {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.chat-preview {
+  max-width: 1400px;
+  margin: 0 auto 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fcfbf6;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.chat-preview-open {
+  display: grid;
+  gap: 3px;
+  flex-shrink: 0;
+  text-align: left;
+  padding: 5px 8px;
+}
+.chat-preview-open span {
+  font-size: 10px;
+}
+.chat-preview-lines {
+  min-width: 0;
+  flex: 1;
+}
+.chat-preview-lines p {
+  margin: 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.chat-preview-lines b {
+  margin-right: 6px;
+}
+.chat-log {
+  scroll-behavior: smooth;
+}
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+@media (max-width: 1190px) {
+  .game-layout {
+    height: calc(100dvh - 112px);
+  }
+  .chat-preview.in-game {
+    height: 64px;
+    margin: 0 6px;
+    padding: 4px 7px;
+    gap: 8px;
+  }
+  .chat-preview-open {
+    padding: 4px;
+  }
+  .chat-preview-lines p {
+    font-size: 11px;
+  }
+  .game-active .header .icon-button {
+    font-size: 16px;
+    min-height: 32px;
+    padding: 4px 6px;
+  }
+  .game-active .header .social-label {
+    font-size: 11px;
+  }
+  .watch-player + .player-profile-button {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 4px;
+    margin-left: 3px;
+  }
+}
+@media (max-width: 600px) {
+  .game-active .identity,
+  .game-active .solo-pause,
+  .game-active .solo-reset {
+    display: none;
+  }
+  .game-active .header {
+    gap: 4px;
+  }
+  .game-active .header-right {
+    gap: 4px;
+  }
+  .game-active .brand {
+    font-size: 14px;
+  }
+  .game-active .brand-icon {
+    font-size: 20px;
+  }
+  .game-active .header .icon-button {
+    padding: 4px;
+  }
+  .header .icon-button small {
+    font-size: 11px;
+  }
+  .chat-preview:not(.in-game) {
+    margin: 6px;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  background: #142025;
+  color: #deebe6;
+  --green: #9bd1ba;
+  --line: #3c5557;
+  --muted: #a8bcb5;
+}
+[data-theme="dark"] body {
+  background: #142025;
+}
+[data-theme="dark"]
+  :is(
+    .header,
+    .lobby-desk,
+    .waiting,
+    .player,
+    .personal-panel,
+    .modal,
+    .payment-dialog,
+    .chat-preview,
+    .chat-log,
+    .observer-list article,
+    .profile-card,
+    .room-list-item,
+    .help-content,
+    .property-list,
+    .assets-detail
+  ) {
+  background: #1b2b30;
+  color: #deebe6;
+}
+[data-theme="dark"] :is(input, select, textarea) {
+  background: #20353b;
+  color: #e3efe9;
+  border-color: #506768;
+}
+[data-theme="dark"]
+  :is(
+    .board,
+    .board-center,
+    .board-scroll,
+    .mobile-controls,
+    .action-area,
+    .personal-buttons button,
+    .my-cash,
+    .crew-list article,
+    .empty-seat,
+    .game-meta
+  ) {
+  background: #1c2e32;
+  color: #deebe6;
+}
+[data-theme="dark"] :is(.modal-overlay, .arrival-overlay) {
+  background: #060e13b8;
+}
+[data-theme="dark"]
+  :is(
+    .deed,
+    .deed-front,
+    .deed-back,
+    .card-front,
+    .card-back,
+    .exploration-card,
+    .payment-summary,
+    .payment-details,
+    .payment-actions,
+    .slow-match-offer
+  ) {
+  background: #22363a;
+  color: #e4eee8;
+  border-color: #49605d;
+}
+[data-theme="dark"] .tile {
+  background: #263b3b;
+  color: #e1ede6;
+  border-color: #58706a;
+}
+[data-theme="dark"] .tile.z1 {
+  background: #243d49;
+}
+[data-theme="dark"] .tile.z2 {
+  background: #343749;
+}
+[data-theme="dark"] .tile.z3 {
+  background: #3c3547;
+}
+[data-theme="dark"] .tile.card-tile {
+  background: #4c4426;
+}
+[data-theme="dark"] .tile.special-tile {
+  background: #50392a;
+}
+[data-theme="dark"] .tile.bigbang-tile {
+  background: #080c10;
+  color: #e6ede8;
+}
+[data-theme="dark"]
+  :is(
+    .tile-price,
+    .fine,
+    .eyebrow,
+    .room-list-item small,
+    .player-last-action,
+    .player-stats,
+    .dock-clock,
+    .chat-message time,
+    .deed-subtitle,
+    .deed-science
+  ) {
+  color: #b4c8bd;
+}
+[data-theme="dark"]
+  :is(h1, h2, h3, h4, strong, .brand, .my-cash, .player-heading b) {
+  color: inherit;
+}
+[data-theme="dark"] .primary {
+  background: #386b59;
+  color: #f1faf4;
+}
+[data-theme="dark"] button:hover:not(:disabled) {
+  background: #344b49;
+}
+[data-theme="dark"] .room-list-item.playing-room {
+  background: #101b20;
+  border-color: #52645f;
+}
+[data-theme="dark"] .room-list-item.playing-room b {
+  color: #bacdc4;
+}
+[data-theme="dark"] .spectator-badge {
+  background: #3d2f50;
+  color: #e2c8ff;
+  border-color: #8b6ba7;
+}
+[data-theme="dark"] .watching-player {
+  outline-color: #c198e6;
+}
+[data-theme="dark"] .records-table :is(td, th) {
+  border-color: #49605d;
+}
+[data-theme="dark"]
+  :is(
+    .live-activity,
+    .mobile-action-dock,
+    .arrival-pass,
+    .arrival-choice,
+    .deed-total,
+    .fund-total,
+    .deed-heading,
+    .deed-flip,
+    .card-reveal,
+    .card-content,
+    .turn-label,
+    .unlock,
+    .fund-panel,
+    .desk,
+    .lobby-actions button,
+    .records-table thead
+  ) {
+  background: #243d40;
+  color: #e1eee6;
+  border-color: #49615c;
+}
+[data-theme="dark"] .live-activity strong {
+  color: #c6e4d3;
+}
+[data-theme="dark"] .tile:hover {
+  background: #42544b !important;
+}
+.overview .tile b {
+  font-size: var(--tile-font, 10px) !important;
+}
+@media (min-width: 1191px) {
+  .game-active .game-layout {
+    height: calc(100dvh - 169px);
+    min-height: 450px;
+    padding: 12px 26px;
+    grid-template-columns: 205px minmax(0, 1fr) 220px;
+    gap: 16px;
+    overflow: auto;
+  }
+  .game-active .board-section {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .game-active .board-stage {
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .game-active .board-scroll {
+    width: min(100%, calc(100dvh - 225px));
+    aspect-ratio: 1;
+    overflow: auto;
+  }
+  .game-active .board {
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .game-active .players-panel,
+  .game-active .personal-panel {
+    overflow: auto;
+    min-height: 0;
+  }
+  .game-active .board-center {
+    overflow: auto;
+    gap: 6px;
+    padding: 10px;
+  }
+  .game-active .board-center .dice-wrap {
+    height: clamp(75px, 14vh, 140px);
+    flex-shrink: 0;
+  }
+  .game-active .board-center > h2 {
+    margin: 0;
+    font-size: 24px;
+  }
+  .chat-preview.in-game {
+    height: 64px;
+    margin-bottom: 0;
+  }
+  .game-active .footer {
+    display: none;
+  }
+}
+[data-theme="dark"] .front-prices,
+[data-theme="dark"] .deed .flip-button {
+  background: #2b4646;
+  color: #e0eee6;
+  border-color: #688277;
+}
+[data-theme="dark"] .deed-front > p,
+[data-theme="dark"] .deed-front > small {
+  color: #bad0bd;
+}
+[data-theme="dark"] .dice-result {
+  color: #d2e5d8;
+}
+@media (min-width: 1191px) {
+  .game-active .players-panel .player {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+  .game-active .players-panel h2 {
+    margin-bottom: 14px;
+  }
+}

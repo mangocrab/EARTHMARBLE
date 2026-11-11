@@ -21,6 +21,7 @@ export type Spectator = {
   name: string;
   profile?: string;
   watching?: string;
+  offlineSince?: number;
 };
 export type ChatMessage = {
   id: string;

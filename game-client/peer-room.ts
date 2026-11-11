@@ -29,8 +29,13 @@ import {
 import { localStats } from "./stats";
 import type { Room, Member, Snapshot } from "./protocol";
 type Identity = { id: string; name: string; profile?: string; stats?: Stats };
-type HostedRoom = Omit<Room, "game"> & { game?: Game; social?: SocialState };
-const FINDER = (mode: MatchMode) => `earthmarble-match-${mode}-v2`;
+type HostedRoom = Omit<Room, "game"> & {
+  game?: Game;
+  social?: SocialState;
+  gameId?: string;
+};
+const SESSION = "earthmarble.peer.v1";
+const FINDER = (mode: MatchMode) => `earthmarble-match-${mode}-v3`;
 const levels = ["easy", "normal", "hard"];
 export class PeerRoomController {
   private peer?: Peer;
@@ -39,6 +44,132 @@ export class PeerRoomController {
   private upstream?: DataConnection;
   private hosted?: HostedRoom;
   private password = "";
+  private tokens = new Map<string, string>();
+  private resumeToken = "";
+  private reconnecting = false;
+  private guestCode = "";
+  private guestSpectator = false;
+  private guestAuto = false;
+  private guestPassword = "";
+  private clearSession() {
+    try {
+      sessionStorage.removeItem(SESSION);
+    } catch {}
+  }
+  private saveSession() {
+    if (this.matching || this.dead) return;
+    try {
+      sessionStorage.setItem(
+        SESSION,
+        JSON.stringify({
+          owner: this.me.id,
+          at: Date.now(),
+          ...(this.hosted
+            ? {
+                host: this.hosted,
+                password: this.password,
+                tokens: [...this.tokens],
+                kicked: [...this.kicked],
+                cache: [...this.cache],
+              }
+            : {
+                code: this.guestCode,
+                token: this.resumeToken,
+                spectate: this.guestSpectator,
+                password: this.guestPassword,
+              }),
+        }),
+      );
+    } catch {}
+  }
+  static hasSession(id: string) {
+    try {
+      const r = JSON.parse(sessionStorage.getItem(SESSION) || "null");
+      return (
+        r?.owner === id &&
+        Date.now() - r.at < 86400000 &&
+        !!(r.host || (r.code && r.token))
+      );
+    } catch {
+      return false;
+    }
+  }
+  async restore() {
+    const r = JSON.parse(sessionStorage.getItem(SESSION)!);
+    if (r.owner !== this.me.id) throw Error("저장된 방 계정이 다릅니다.");
+    if (r.host) {
+      this.hosted = r.host;
+      this.password = r.password;
+      this.tokens = new Map(r.tokens);
+      this.kicked = new Set(r.kicked);
+      this.cache = new Map(r.cache || []);
+      for (const m of this.hosted!.members)
+        if (!m.ai && m.id !== this.me.id) m.offlineSince = Date.now();
+      for (const observer of social(this.hosted!).spectators)
+        observer.offlineSince = Date.now();
+      for (let i = 0; ; i++) {
+        try {
+          await this.boot(`earthmarble-room-${r.host.code}`);
+          break;
+        } catch (e) {
+          if (this.dead || i >= 14 || (e as any).type !== "unavailable-id")
+            throw e;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+      this.broadcast();
+    } else {
+      this.resumeToken = r.token;
+      this.guestCode = r.code;
+      this.guestPassword = r.password;
+      this.guestSpectator = r.spectate;
+      const peer = await this.boot();
+      await this.joinHost(
+        peer,
+        `earthmarble-room-${r.code}`,
+        r.password,
+        false,
+        r.spectate,
+      );
+    }
+  }
+  private reconnect() {
+    if (this.dead || this.reconnecting || !this.peer || !this.resumeToken)
+      return;
+    this.reconnecting = true;
+    this.emit({
+      ...this.snapshot,
+      reconnecting: true,
+      room: this.snapshot.room
+        ? { ...this.snapshot.room, connection: "connecting" }
+        : null,
+      serverNow: Date.now(),
+    });
+    const until = Date.now() + 45000;
+    void (async () => {
+      while (!this.dead && Date.now() < until) {
+        try {
+          await this.joinHost(
+            this.peer!,
+            `earthmarble-room-${this.guestCode}`,
+            this.guestPassword,
+            false,
+            this.guestSpectator,
+          );
+          return;
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+      if (!this.dead)
+        this.fail(
+          "방에 다시 연결하지 못했습니다. 방장이 돌아온 뒤 새로고침하세요.",
+          true,
+        );
+    })().finally(() => {
+      this.reconnecting = false;
+    });
+  }
   private kicked = new Set<string>();
   private peers = new Map<
     string,
@@ -109,7 +240,9 @@ export class PeerRoomController {
                 ? view(r.game, spectator?.watching || id)
                 : undefined,
               result:
-                r.game && !spectator ? result(r.game, id, r.id) : undefined,
+                r.game && !spectator
+                  ? result(r.game, id, r.gameId || r.id)
+                  : undefined,
             }
           : null,
       matching: this.matching,
@@ -123,6 +256,7 @@ export class PeerRoomController {
   private broadcast() {
     if (this.dead) return;
     this.finalizeRecords();
+    this.saveSession();
     this.syncDirectory();
     this.emit(this.stateFor(this.me.id));
     for (const { conn, identity } of this.peers.values())
@@ -338,6 +472,10 @@ export class PeerRoomController {
   ) {
     const c = await connect(peer, host);
     this.upstream = c;
+    this.guestCode = host.replace("earthmarble-room-", "");
+    this.guestPassword = password;
+    this.guestSpectator = spectate;
+    this.guestAuto = auto;
     await new Promise<void>((resolve, reject) => {
       let admitted = false;
       const timer = setTimeout(
@@ -352,6 +490,7 @@ export class PeerRoomController {
           typeof data.state.serverNow === "number"
         ) {
           this.matching = !!data.state.matching;
+          this.saveSession();
           if (this.matching && data.state.matchStartedAt)
             this.matchStartedAt =
               Date.now() -
@@ -362,6 +501,12 @@ export class PeerRoomController {
             clearTimeout(timer);
             resolve();
           }
+        } else if (
+          data?.type === "admitted" &&
+          typeof data.token === "string"
+        ) {
+          this.resumeToken = data.token;
+          this.saveSession();
         } else if (data?.type === "ack") {
           const request = this.pending.get(data.id);
           if (request) {
@@ -388,13 +533,10 @@ export class PeerRoomController {
         clearTimeout(timer);
         if (!admitted) reject(new Error("참가 연결이 닫혔습니다."));
         else if (!this.dead && this.matching) this.resumeMatch();
-        else if (!this.dead && this.snapshot.room?.game?.phase !== "finished")
-          this.fail(
-            "방장과 연결이 끊겼습니다. 방장이 창을 열어 두어야 합니다.",
-          );
+        else if (!this.dead && this.upstream === c) this.reconnect();
       });
       c.on("error", () => {
-        if (!this.dead) this.fail("온라인 연결 오류가 발생했습니다.");
+        if (!this.dead && admitted && this.upstream === c) this.reconnect();
       });
       c.send({
         type: "hello",
@@ -403,6 +545,7 @@ export class PeerRoomController {
         auto,
         spectate,
         matchMode: this.matchMode,
+        token: this.resumeToken,
       });
     });
   }
@@ -426,6 +569,11 @@ export class PeerRoomController {
       if (!identity) {
         const r = this.hosted,
           p = data?.identity;
+        const returning =
+          r &&
+          p &&
+          this.tokens.get(p.id) &&
+          this.tokens.get(p.id) === data.token;
         let error = "";
         if (
           data?.type !== "hello" ||
@@ -438,24 +586,26 @@ export class PeerRoomController {
           p.name.trim().length > 16
         )
           error = "참가 정보를 확인하세요.";
-        else if (data.password !== this.password)
+        else if (!returning && data.password !== this.password)
           error = "방 비밀번호가 다릅니다.";
         else if (this.kicked.has(p.id))
           error = "이 방에서 강퇴되어 다시 참가할 수 없습니다.";
         else if (
-          r.members.some((m) => m.id === p.id) ||
-          social(r).spectators.some((m) => m.id === p.id)
+          !returning &&
+          (r.members.some((m) => m.id === p.id) ||
+            social(r).spectators.some((m) => m.id === p.id))
         )
           error = "이미 참가한 탐사대원입니다. 다른 브라우저를 사용하세요.";
-        else if (r.game && !data.spectate)
+        else if (!returning && r.game && !data.spectate)
           error = "진행 중인 방은 관전으로 입장하세요.";
-        else if (!r.game && r.members.length >= r.max)
+        else if (!returning && !r.game && r.members.length >= r.max)
           error = "방이 가득 찼습니다.";
-        else if (r.game && social(r).spectators.length >= 50)
+        else if (!returning && r.game && social(r).spectators.length >= 50)
           error = "관전 정원이 찼습니다.";
         else if (
-          !!data.auto !== this.matching ||
-          (data.auto && data.matchMode !== this.matchMode)
+          !returning &&
+          (!!data.auto !== this.matching ||
+            (data.auto && data.matchMode !== this.matchMode))
         )
           error = "현재 매칭이 끝났습니다.";
         if (error) {
@@ -468,8 +618,26 @@ export class PeerRoomController {
           name: p.name.trim(),
           stats: validStats(p.stats) ? p.stats : emptyStats(),
         };
+        if (returning) {
+          for (const [key, entry] of this.peers)
+            if (entry.identity.id === p.id) {
+              this.peers.delete(key);
+              entry.conn.close();
+            }
+          const m = r!.members.find((m) => m.id === p.id);
+          if (m) m.offlineSince = undefined;
+          const observer = social(r!).spectators.find(
+            (o) => o.id === identity!.id,
+          );
+          if (observer) observer.offlineSince = undefined;
+        }
         this.peers.set(c.peer, { conn: c, identity });
-        if (r!.game)
+        const token = this.tokens.get(p.id) || crypto.randomUUID();
+        this.tokens.set(p.id, token);
+        c.send({ type: "admitted", token });
+        if (returning) {
+          /* Retain the authoritative seat and selected perspective. */
+        } else if (r!.game)
           social(r!).spectators.push({
             id: identity.id,
             name: identity.name,
@@ -520,20 +688,23 @@ export class PeerRoomController {
       this.peers.delete(c.peer);
       const r = this.hosted;
       if (!r) return;
-      social(r).spectators = social(r).spectators.filter(
-        (s) => s.id !== identity!.id,
-      );
-      if (!r.game) r.members = r.members.filter((m) => m.id !== identity!.id);
-      else {
-        const m = r.members.find((m) => m.id === identity!.id);
-        if (m) m.offlineSince = Date.now();
-      }
+      const m = r.members.find((m) => m.id === identity!.id);
+      if (m) m.offlineSince = Date.now();
+      const observer = social(r).spectators.find((o) => o.id === identity!.id);
+      if (observer) observer.offlineSince = Date.now();
       r.version++;
       this.broadcast();
     });
   }
   async command(a: Record<string, unknown>) {
     if (a.type === "cancel" || (a.type === "leave" && !this.hosted)) {
+      if (a.type === "leave" && this.upstream?.open) {
+        this.upstream.send({
+          type: "command",
+          envelope: { ...a, requestId: crypto.randomUUID(), version: 0 },
+        });
+      }
+      this.clearSession();
       this.close();
       this.exit();
       return;
@@ -556,8 +727,25 @@ export class PeerRoomController {
   }
   private perform(actor: string, a: Record<string, unknown>) {
     const r = this.hosted!;
+    if (a.type === "return-room") {
+      if (
+        !r.members.some((m) => m.id === actor) ||
+        social(r).mode !== "private" ||
+        r.game?.phase !== "finished"
+      )
+        throw Error("종료된 개인 방에서만 돌아갈 수 있습니다.");
+      this.finalizeRecords();
+      r.game = undefined;
+      social(r).startedAt = undefined;
+      social(r).resultsRecorded = false;
+      r.members.forEach((m) => (m.ready = !!m.ai));
+      r.version++;
+      this.broadcast();
+      return;
+    }
     if (a.type === "leave") {
       if (actor === this.me.id) {
+        this.clearSession();
         this.close();
         this.exit();
         return;
@@ -565,7 +753,11 @@ export class PeerRoomController {
       const peer = [...this.peers.values()].find(
         (p) => p.identity.id === actor,
       );
+      r.members = r.members.filter((m) => m.id !== actor);
+      social(r).spectators = social(r).spectators.filter((m) => m.id !== actor);
+      this.tokens.delete(actor);
       peer?.conn.close();
+      this.broadcast();
       return;
     }
     const s = social(r),
@@ -650,7 +842,10 @@ export class PeerRoomController {
             ready: true,
           });
         } else if (a.type === "start") {
-          if (r.members.length < 2 || !r.members.every((m) => m.ready))
+          if (
+            r.members.length < 2 ||
+            !r.members.every((m) => m.ready && !m.offlineSince)
+          )
             throw new Error("모든 대원이 준비해야 합니다.");
           this.start();
         } else throw new Error("알 수 없는 행동입니다.");
@@ -661,6 +856,8 @@ export class PeerRoomController {
   }
   private start() {
     const r = this.hosted!;
+    r.gameId = crypto.randomUUID();
+    social(r).resultsRecorded = false;
     r.game = createGame(
       r.members.map((m) => ({
         id: m.id,
@@ -691,7 +888,28 @@ export class PeerRoomController {
         this.broadcast();
       }
     }
+    const expiredObservers = social(r).spectators.filter(
+      (o) => o.offlineSince && now - o.offlineSince >= 90000,
+    );
+    if (expiredObservers.length) {
+      social(r).spectators = social(r).spectators.filter(
+        (o) => !expiredObservers.includes(o),
+      );
+      expiredObservers.forEach((o) => this.tokens.delete(o.id));
+      this.broadcast();
+    }
     const g = r.game;
+    if (!g && !this.matching) {
+      const expired = r.members.filter(
+        (m) => !m.ai && m.offlineSince && now - m.offlineSince >= 90000,
+      );
+      if (expired.length) {
+        r.members = r.members.filter((m) => !expired.includes(m));
+        for (const m of expired) this.tokens.delete(m.id);
+        r.version++;
+        this.broadcast();
+      }
+    }
     if (!g || g.phase === "finished") return;
     let changed = tick(g, now, browserRandom);
     const p = active(g),
@@ -720,7 +938,7 @@ export class PeerRoomController {
       return;
     social(r).resultsRecorded = true;
     for (const m of r.members) {
-      const record = result(r.game, m.id, r.id);
+      const record = result(r.game, m.id, r.gameId || r.id);
       if (record)
         m.stats = addResult(
           validStats(m.stats) ? m.stats : emptyStats(),
@@ -728,20 +946,26 @@ export class PeerRoomController {
         );
     }
   }
-  private fail(message: string) {
+  private fail(message: string, preserve = false) {
     if (this.dead) return;
-    this.close();
+    if (!preserve) this.clearSession();
+    this.close(!preserve);
     this.exit(message);
   }
-  close() {
+  suspend() {
+    this.saveSession();
+    this.close(false);
+  }
+  close(announce = true) {
     if (this.dead) return;
+    if (announce) this.clearSession();
     this.dead = true;
     this.directory?.close();
     this.directory = undefined;
     this.abort.abort();
     clearInterval(this.loop);
     for (const { conn } of this.peers.values()) {
-      if (conn.open)
+      if (announce && conn.open)
         conn.send({ type: "closed", error: "방장이 방을 종료했습니다." });
       conn.close();
     }

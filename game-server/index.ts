@@ -64,6 +64,7 @@ interface Room {
   game?: Game;
   requests: Record<string, boolean>;
   social?: SocialState;
+  gameId?: string;
 }
 const dataDir = process.env.DATA_DIR || ".data";
 mkdirSync(dataDir, { recursive: true });
@@ -305,10 +306,10 @@ function recordResults(r: Room) {
   db.exec("SAVEPOINT record_results");
   try {
     for (const p of r.game.players) {
-      const record = result(r.game, p.id, r.id);
+      const record = result(r.game, p.id, r.gameId || r.id);
       if (!record) continue;
       db.prepare("INSERT OR IGNORE INTO game_results VALUES (?,?,?,?,?,?)").run(
-        r.id,
+        r.gameId || r.id,
         p.id,
         record.size,
         record.rank,
@@ -377,7 +378,8 @@ function publicRoom(r: Room, id: string) {
     })),
     ...socialView(s, id),
     game: r.game ? view(r.game, observer?.watching || id) : undefined,
-    result: r.game && !observer ? result(r.game, id, r.id) : undefined,
+    result:
+      r.game && !observer ? result(r.game, id, r.gameId || r.id) : undefined,
   };
 }
 function roomListings(): RoomListing[] {
@@ -678,7 +680,16 @@ io.on("connection", (socket) => {
         const s = social(r),
           observer = s.spectators.find((p) => p.id === user.id),
           member = r.members.find((p) => p.id === user.id);
-        if (a.type === "chat") {
+        if (a.type === "return-room") {
+          if (!member || s.mode !== "private" || r.game?.phase !== "finished")
+            throw Error("종료된 개인 방에서만 돌아갈 수 있습니다.");
+          recordResults(r);
+          r.game = undefined;
+          s.startedAt = undefined;
+          s.resultsRecorded = false;
+          r.members.forEach((m) => (m.ready = !!m.ai));
+          roomChanged(r);
+        } else if (a.type === "chat") {
           chat(s, observer || member!, !!observer, a, now);
           broadcast(r);
         } else if (a.type === "watch") {
@@ -774,6 +785,7 @@ io.on("connection", (socket) => {
             !r.members.every((m) => m.ready)
           )
             throw new Error("2명 이상, 전원 준비가 필요합니다.");
+          r.gameId = randomUUID();
           r.game = createGame(r.members, now, randomInt, r.minutes);
           social(r).startedAt = now;
           roomChanged(r);

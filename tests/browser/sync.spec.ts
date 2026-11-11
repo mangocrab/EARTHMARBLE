@@ -237,7 +237,7 @@ test("열린 증서의 건설·매각·파산 동기화, 카드 안내와 자산
     await A.getByRole("button", { name: "파산 선언" }).click();
     await expect(B.getByRole("dialog", { name: "탐사 결과" })).toBeVisible();
     await expect(
-      B.getByRole("button", { name: "로비로 돌아가기" }),
+      B.getByRole("button", { name: "방으로 돌아가기" }),
     ).toBeVisible();
     await until(() => state.room.game.phase === "finished");
     expect(state.room.game.estates[5]).toBeUndefined();

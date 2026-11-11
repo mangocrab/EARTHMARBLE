@@ -313,6 +313,19 @@ it("종료 전적을 SQLite에 한 번만 저장하고 관전자·AI 싱글을 �
   A = await connect(A.cookie, A.id);
   await ok(A, { type: "chat", kind: "quick", quick: 0 });
   expect((await profile(A)).stats[2].games).toBe(1);
+  B = await connect(B.cookie, B.id);
+  await ok(A, { type: "return-room" });
+  expect(A.state.room.game).toBeUndefined();
+  await ok(A, { type: "ready", ready: true });
+  await ok(B, { type: "ready", ready: true });
+  await ok(A, { type: "start" });
+  await stop();
+  mutate(id, (r) => (r.game.endsAt = now + 1000));
+  await launch();
+  A = await connect(A.cookie, A.id);
+  advance(1001);
+  await wait(() => A.state.room.game.phase === "finished");
+  expect((await profile(A)).stats[2].games).toBe(2);
   const L = await user("AIのみ");
   await ok(L, {
     type: "create",

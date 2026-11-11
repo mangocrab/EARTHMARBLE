@@ -49,15 +49,15 @@ export function playSound(sound: Sound) {
     return;
   const c = context,
     bus = master;
-  // Quiet sine partials and a low-pass wooden tap keep every cue rounded.
-  function note(freq: number, delay = 0, duration = 0.22, gain = 0.075) {
+  // A short, damped wooden resonance is shared by dice, footsteps and UI cues.
+  function note(freq: number, delay = 0, duration = 0.12, gain = 0.055) {
     const osc = c.createOscillator(),
       env = c.createGain(),
       at = c.currentTime + delay;
     osc.type = "sine";
     osc.frequency.setValueAtTime(freq, at);
     env.gain.setValueAtTime(0, at);
-    env.gain.linearRampToValueAtTime(gain, at + 0.012);
+    env.gain.linearRampToValueAtTime(gain, at + 0.003);
     env.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     osc.connect(env);
     env.connect(bus);
@@ -103,29 +103,29 @@ export function playSound(sound: Sound) {
   if (sound === "step") {
     if (performance.now() - lastStep < 50) return;
     lastStep = performance.now();
-    wood(stepCount++ % 2 ? 490 : 420, 0, 0.72);
+    wood(stepCount++ % 2 ? 280 : 245, 0, 0.55);
   } else if (sound === "roll") {
     [
       0, 0.06, 0.14, 0.23, 0.34, 0.47, 0.62, 0.79, 0.98, 1.19, 1.43, 1.69, 1.96,
       2.12,
     ].forEach((delay, i) =>
-      wood([540, 460, 610, 500][i % 4], delay, 0.7 - i * 0.025),
+      wood([330, 285, 390, 310][i % 4], delay, 0.62 - i * 0.024),
     );
-  } else if (sound === "gain")
-    [523, 659, 784].forEach((f, i) => note(f, i * 0.09, 0.32));
-  else if (sound === "spend")
-    [523, 440].forEach((f, i) => note(f, i * 0.1, 0.25, 0.06));
-  else if (sound === "buy" || sound === "build") {
-    wood(380, 0, 0.5);
-    [392, 523, 659].forEach((f, i) => note(f, 0.1 + i * 0.1, 0.32));
+  } else if (sound === "gain") {
+    wood(340, 0, 0.4);
+    wood(430, 0.1, 0.32);
+  } else if (sound === "spend") {
+    wood(310, 0, 0.33);
+    wood(255, 0.11, 0.28);
+  } else if (sound === "buy" || sound === "build") {
+    wood(280, 0, 0.5);
+    wood(350, 0.12, 0.4);
+    if (sound === "build") wood(420, 0.24, 0.3);
   } else if (sound === "card") {
-    wood(530, 0, 0.35);
-    wood(620, 0.13, 0.28);
-    note(659, 1.2, 0.4, 0.065);
-    note(784, 1.31, 0.38, 0.045);
-  } else if (sound === "turn") {
-    note(392, 0, 0.32, 0.06);
-    note(523, 0.16, 0.4, 0.06);
-  } else if (sound === "finish")
-    [392, 523, 659, 784].forEach((f, i) => note(f, i * 0.18, 0.55, 0.07));
+    wood(520, 0, 0.15);
+    wood(465, 0.08, 0.12);
+    wood(390, 1.2, 0.35);
+  } else if (sound === "turn") wood(410, 0, 0.3);
+  else if (sound === "finish")
+    [300, 375, 450].forEach((p, i) => wood(p, i * 0.16, 0.4 - i * 0.06));
 }
