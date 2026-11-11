@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 const KEY = "earthmarble.solo.v1";
-async function start(page: Page, count = "1") {
+async function stableOrder(page: Page) {
   // Stable fixture order; production draws are covered by the core permutation tests.
   await page.addInitScript(() => {
     if (
@@ -14,6 +14,9 @@ async function start(page: Page, count = "1") {
       }) as typeof crypto.getRandomValues;
     }
   });
+}
+async function start(page: Page, count = "1") {
+  await stableOrder(page);
   // Offline AI play must work through the unified room even without signaling.
   await page.route("https://0.peerjs.com/**", (route) => route.abort());
   await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
@@ -863,6 +866,7 @@ test("보유 카드를 사용하면 남은 덱 순서는 유지하고 버림 더
 test("사이트 삽입 스크립트의 iframe에서 방 생성·AI 강퇴·싱글플레이가 동작한다", async ({
   page,
 }) => {
+  await stableOrder(page);
   await page.route("https://0.peerjs.com/**", (route) => route.abort());
   await page.routeWebSocket("wss://0.peerjs.com/**", (socket) =>
     socket.close(),
