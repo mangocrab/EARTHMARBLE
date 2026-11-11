@@ -1083,7 +1083,18 @@ function App() {
               aria-label="채팅"
               onClick={() => setPanel("chat")}
             >
-              <span aria-hidden="true">☏</span>
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-7a8 8 0 1 1 18-3Z" />
+                <path d="M7 10h8M7 14h5" />
+              </svg>
               <span className="social-label">채팅</span>
             </button>
           )}
@@ -1104,7 +1115,18 @@ function App() {
             aria-label="설정"
             onClick={() => setPanel("settings")}
           >
-            ⚙
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m9.7 3-.6 2.1-1.6.9-2.1-.5-2.3 4 1.5 1.6v1.8l-1.5 1.6 2.3 4 2.1-.5 1.6.9.6 2.1h4.6l.6-2.1 1.6-.9 2.1.5 2.3-4-1.5-1.6v-1.8l1.5-1.6-2.3-4-2.1.5-1.6-.9-.6-2.1Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
           </button>
         </div>
       </header>
