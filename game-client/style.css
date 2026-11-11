@@ -3718,22 +3718,22 @@ textarea {
     margin-bottom: 14px;
   }
 }
-/* Dark theme: neutral surfaces, restrained sage accents and clear hierarchy. */
+/* Dark theme: neutral graphite surfaces and dark card faces. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --night: #171b1a;
-  --paper: #202624;
-  --paper-raised: #282f2c;
-  --paper-inset: #1b211f;
-  --ink: #e8ebe4;
-  --ink-soft: #bfc8c0;
-  --green: #9db5a7;
+  --night: #1d1e22;
+  --paper: #27282e;
+  --paper-raised: #32343b;
+  --paper-inset: #212227;
+  --ink: #e6e6eb;
+  --ink-soft: #bfc0c9;
+  --green: #b6b7c4;
   --line: #ffffff14;
-  --muted: #9ba99f;
-  --focus: #a8c2b2;
+  --muted: #a6a8b3;
+  --focus: #b8bbc9;
   color: var(--ink);
   background: var(--night);
-  scrollbar-color: #57665d var(--night);
+  scrollbar-color: #626265 var(--night);
 }
 [data-theme="dark"] body {
   background: var(--night);
@@ -3755,7 +3755,7 @@ textarea {
   letter-spacing: -0.045em;
 }
 [data-theme="dark"] .hero h1 > span {
-  color: #a7bfae;
+  color: #b9b9bc;
 }
 [data-theme="dark"]
   :is(
@@ -3798,7 +3798,7 @@ textarea {
   border-radius: 12px;
 }
 [data-theme="dark"] .departure {
-  background: #202624;
+  background: #252528;
   box-shadow: 0 12px 40px #00000014;
 }
 [data-theme="dark"] :is(input, select, textarea) {
@@ -3815,28 +3815,28 @@ textarea {
   border-color: var(--line);
 }
 [data-theme="dark"] button:hover:not(:disabled) {
-  background: #303b34;
+  background: #38383b;
   border-color: #ffffff29;
 }
 [data-theme="dark"] .primary,
 [data-theme="dark"] .lobby-actions button.primary {
-  background: #a4bcae;
-  color: #18241d;
+  background: #b6b6b9;
+  color: #212124;
   border-color: transparent;
   box-shadow: none;
   font-weight: 600;
 }
 [data-theme="dark"] .primary:hover:not(:disabled) {
-  background: #b9ccbf;
+  background: #c7c7ca;
   border-color: transparent;
 }
 [data-theme="dark"] .lobby-actions button {
-  background: #282f2b;
+  background: #2d2d30;
   border-color: #ffffff14;
   border-radius: 9px;
 }
 [data-theme="dark"] .lobby-actions .primary small {
-  color: #364c3d;
+  color: #464649;
 }
 [data-theme="dark"] .lobby-actions small {
   color: var(--muted);
@@ -3848,8 +3848,8 @@ textarea {
   border-radius: 9px;
 }
 [data-theme="dark"] .player.current {
-  background: #25342b;
-  border-color: #91aa9570;
+  background: #303033;
+  border-color: #a3a3a670;
   box-shadow: none;
 }
 [data-theme="dark"]
@@ -3866,7 +3866,7 @@ textarea {
   color: var(--ink);
 }
 [data-theme="dark"] :is(.my-cash, .unlock, .fund-panel) {
-  background: #202824;
+  background: #262629;
   border-color: var(--line);
   border-radius: 9px;
 }
@@ -3889,84 +3889,84 @@ textarea {
   background: transparent;
 }
 [data-theme="dark"] .board {
-  background: #353d37;
+  background: #3b3b3e;
   border-color: #ffffff1c;
   box-shadow: none;
 }
 [data-theme="dark"] .board-center {
-  background: #202b24;
+  background: var(--paper-raised);
   color: var(--ink);
 }
 [data-theme="dark"] .board-center > h2 {
-  color: #e1e8dc;
+  color: #e6e6e9;
   font-weight: 600;
 }
 [data-theme="dark"] .board-center > h2 span {
-  color: #a0b1a1;
+  color: #acacaf;
 }
 [data-theme="dark"] .tile {
-  background: #2a2c27;
-  color: #d8ddd4;
+  background: #2b2b2e;
+  color: #dbdbde;
   border-top-color: var(--zone);
   box-shadow: none;
 }
 [data-theme="dark"] .tile.z0 {
   --zone: #a1876f;
-  background: #2d2c28;
+  background: #2c2c2f;
 }
 [data-theme="dark"] .tile.z1 {
   --zone: #7f9e98;
-  background: #28312e;
+  background: #2f2f32;
 }
 [data-theme="dark"] .tile.z2 {
   --zone: #94a585;
-  background: #2d322a;
+  background: #303033;
 }
 [data-theme="dark"] .tile.z3 {
   --zone: #9890a6;
-  background: #2d2d33;
+  background: #2d2d30;
 }
 [data-theme="dark"] .tile.card-tile {
   --zone: #c4ac64;
-  background: #353327;
+  background: #333336;
 }
 [data-theme="dark"] .tile.special-tile {
   --zone: #c3976a;
-  background: #353029;
+  background: #313134;
 }
 [data-theme="dark"] .tile.bigbang-tile {
   --zone: #101412;
-  background: #101412;
-  color: #d8ded7;
+  background: #131316;
+  color: #dcdcdf;
 }
 [data-theme="dark"] .tile:hover {
-  background: color-mix(in srgb, var(--zone) 20%, #28302a) !important;
+  background: color-mix(in srgb, var(--zone) 20%, #2e2e31) !important;
 }
 [data-theme="dark"] :is(.tile-price, .tile > small) {
-  color: #a1ada2;
+  color: #aaaaad;
 }
 [data-theme="dark"] .corner {
-  background: #2a352b;
-  color: #d8e2d2;
+  background: #323235;
+  color: #dfdfe2;
 }
 [data-theme="dark"] .tile.corner {
   border-top-color: transparent;
 }
 [data-theme="dark"] .live-activity {
-  background: #28372d;
-  color: #dce5d8;
+  background: #333336;
+  color: #e2e2e5;
   border-color: #ffffff0d;
   border-radius: 7px;
 }
 [data-theme="dark"] .live-activity strong {
-  color: #d1dfc9;
+  color: #dadadd;
 }
 [data-theme="dark"] .live-activity p {
-  color: #aabda9;
+  color: #b8b8bb;
 }
 [data-theme="dark"] .turn-label {
-  background: #2d4030;
-  color: #c9ddc3;
+  background: #3b3b3e;
+  color: #d7d7da;
   border-color: transparent;
 }
 [data-theme="dark"] .action-area {
@@ -3974,7 +3974,7 @@ textarea {
   color: var(--ink);
 }
 [data-theme="dark"] .dice-result {
-  color: #cad9c5;
+  color: #d4d4d7;
 }
 [data-theme="dark"] .board-caption {
   color: var(--muted);
@@ -3983,13 +3983,13 @@ textarea {
   color: var(--ink-soft);
 }
 [data-theme="dark"] .timer {
-  background: #354237;
+  background: #3e3e41;
 }
 [data-theme="dark"] .timer > span {
-  background: #8eac89;
+  background: #a3a3a6;
 }
 [data-theme="dark"] .timer small {
-  color: #afc3a9;
+  color: #bdbdc0;
 }
 [data-theme="dark"] .z0:not(.tile) {
   color: #bea58d;
@@ -4004,7 +4004,7 @@ textarea {
   color: #b7adc8;
 }
 [data-theme="dark"] :is(.modal-overlay, .arrival-overlay) {
-  background: #0c1210c7;
+  background: #111114c7;
 }
 [data-theme="dark"]
   :is(
@@ -4017,7 +4017,7 @@ textarea {
     .card-reveal,
     .card-content
   ) {
-  background: #252c27;
+  background: #2a2a2d;
   color: var(--ink);
   border-color: #ffffff1c;
 }
@@ -4044,37 +4044,37 @@ textarea {
     .profile-total,
     .latest-card
   ) {
-  background: #303a30;
-  color: #dce5d6;
+  background: #37373a;
+  color: #e2e2e5;
   border-color: #ffffff10;
   border-radius: 7px;
   box-shadow: none;
 }
 [data-theme="dark"] :is(.front-prices b, .deed-total strong) {
-  color: #e2e9da;
+  color: #e6e6e9;
 }
 [data-theme="dark"] .deed .flip-button {
-  background: #2c382e;
-  color: #c2d5bd;
+  background: #353538;
+  color: #cfcfd2;
   border-color: var(--line);
 }
 [data-theme="dark"] .deed .flip-button:hover {
-  background: #354738;
+  background: #424245;
 }
 [data-theme="dark"] :is(.arrival-pass, .arrival-choice) {
-  background: #263129;
+  background: #2e2e31;
   color: var(--ink);
   border-color: var(--line);
 }
 [data-theme="dark"] .arrival-pass button,
 [data-theme="dark"] .arrival-choices small {
-  background: #28312a;
-  color: #cedac9;
+  background: #2f2f32;
+  color: #d6d6d9;
   border-color: var(--line);
 }
 [data-theme="dark"] .arrival-choices button:not(:disabled) {
-  background: #a4bcae;
-  color: #18241d;
+  background: #b6b6b9;
+  color: #212124;
   border-color: transparent;
 }
 [data-theme="dark"]
@@ -4082,7 +4082,7 @@ textarea {
   border-color: var(--line);
 }
 [data-theme="dark"] :is(.payment-summary, .payment-actions) {
-  background: #29352c;
+  background: #323235;
   color: var(--ink);
   border-color: var(--line);
 }
@@ -4092,30 +4092,30 @@ textarea {
 }
 [data-theme="dark"] .arrival-choices button:disabled,
 [data-theme="dark"] .payment-actions button:disabled {
-  background: #29302a;
-  color: #89998a;
+  background: #2e2e31;
+  color: #959598;
   border-color: var(--line);
 }
 [data-theme="dark"] .chat-preview {
-  background: #202923;
+  background: #27272a;
   color: var(--ink);
   border-color: var(--line);
   border-radius: 10px;
 }
 [data-theme="dark"] .chat-log {
-  background: #1c241e;
+  background: var(--paper);
   color: var(--ink);
   border-color: var(--line);
 }
 [data-theme="dark"] .chat-preview-open {
-  background: #2b3b2e;
+  background: #37373a;
   border-color: transparent;
 }
 [data-theme="dark"] .chat-preview-open b {
-  color: #d2e2cb;
+  color: #dddde0;
 }
 [data-theme="dark"] :is(.chat-preview-open span, .chat-preview-lines .fine) {
-  color: #b0c6aa;
+  color: #bfbfc2;
 }
 [data-theme="dark"] .spectator-badge {
   background: #3b3244;
@@ -4129,38 +4129,32 @@ textarea {
   outline-color: #b09dc1;
 }
 [data-theme="dark"] .room-list-item.playing-room {
-  background: #1b231d;
+  background: #212124;
   border-color: var(--line);
 }
 [data-theme="dark"] .room-list-item.playing-room b {
-  color: #acbdab;
+  color: #b8b8bb;
 }
 [data-theme="dark"] .slow-match-offer {
-  background: #363526;
-  color: #dad8b7;
+  background: #343437;
+  color: #d6d6d9;
   border-color: #ffffff1c;
 }
 [data-theme="dark"] .records-table thead {
-  background: #2c392f;
-  color: #d6e1cf;
+  background: #363639;
+  color: #dddde0;
 }
 [data-theme="dark"] .volume-setting input[type="range"] {
   accent-color: var(--green);
 }
 [data-theme="dark"] .card-art {
-  background: #354536;
-  color: #b2cba7;
+  background: #414144;
+  color: #c3c3c6;
 }
 [data-theme="dark"] :is(.latest-card small, .text-button) {
-  color: #b1c5aa;
+  color: #bfbfc2;
 }
-[data-theme="dark"] .drawn-card,
-[data-theme="dark"] .draw-card-front {
-  background: #dce1d4;
-  color: #263526;
-  border-color: #a7b693;
-  box-shadow: 0 24px 80px #00000040;
-}
+
 [data-theme="dark"] .mobile-map-tools {
   background: transparent;
 }
@@ -4168,4 +4162,125 @@ textarea {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+}
+[data-theme="dark"] .primary,
+[data-theme="dark"] .lobby-actions button.primary,
+[data-theme="dark"] .arrival-choices button:not(:disabled),
+[data-theme="dark"] .payment-actions button:first-child {
+  background: #555761;
+  color: #f4f4f6;
+  border-color: #6b6d78;
+}
+[data-theme="dark"] .primary:hover:not(:disabled) {
+  background: #676a77;
+  border-color: #797c88;
+}
+[data-theme="dark"] .lobby-actions .primary small {
+  color: #dddde4;
+}
+[data-theme="dark"] .action-area button,
+[data-theme="dark"] .mobile-action-dock button {
+  background: #40424b;
+  color: #eeeef2;
+  border-color: #595b66;
+}
+[data-theme="dark"] .action-area button:hover:not(:disabled),
+[data-theme="dark"] .mobile-action-dock button:hover:not(:disabled) {
+  background: #51545f;
+}
+
+[data-theme="dark"] .deck-back {
+  background: #292b33;
+  color: #c6c7d0;
+  border-color: #7a7c88;
+  box-shadow:
+    3px -3px 0 #40424b,
+    5px -5px 0 #545663;
+}
+[data-theme="dark"] .draw-card-back {
+  background: repeating-linear-gradient(
+    45deg,
+    #202127 0px,
+    #202127 10px,
+    #292b33 10px,
+    #292b33 12px
+  );
+  color: #c6c7d0;
+  border-color: #7a7c88;
+}
+[data-theme="dark"] .deed-art {
+  color: #a6a7b3;
+}
+[data-theme="dark"] .deed-back th,
+[data-theme="dark"] .deed-total small {
+  color: var(--muted);
+}
+/* Elevation is expressed with surfaces, not a light paper card or a heavy shadow. */
+[data-theme="dark"]
+  :is(
+    .departure,
+    .player,
+    .crew-list article,
+    .personal-buttons button,
+    .my-cash,
+    .unlock,
+    .fund-panel,
+    .chat-preview
+  ) {
+  background: var(--paper);
+}
+[data-theme="dark"] .board-center {
+  background: #24252b;
+}
+[data-theme="dark"]
+  :is(
+    .modal,
+    .payment-dialog,
+    .deed,
+    .deed-front,
+    .deed-back,
+    .drawn-card,
+    .draw-card-front
+  ) {
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: none;
+}
+[data-theme="dark"] .deed-heading {
+  background: transparent;
+}
+[data-theme="dark"]
+  :is(
+    .front-prices,
+    .deed-total,
+    .fund-total,
+    .toll-formula,
+    .usage,
+    .profile-total,
+    .latest-card,
+    .live-activity
+  ) {
+  background: #3b3d46;
+  color: var(--ink);
+}
+[data-theme="dark"]
+  :is(.deed-total small, .deed-back th, .front-prices span, .live-activity p) {
+  color: var(--ink-soft);
+}
+[data-theme="dark"] :is(.payment-details, .payment-summary, .payment-actions) {
+  background: transparent;
+}
+[data-theme="dark"] .chat-log {
+  background: var(--paper-inset);
+}
+
+[data-theme="dark"] .drawn-card,
+[data-theme="dark"] .draw-card-front {
+  border-color: #6f6b56;
+}
+[data-theme="dark"] .turn-marker {
+  color: var(--ink-soft);
+}
+[data-theme="dark"] .tokens span {
+  color: #101114;
 }

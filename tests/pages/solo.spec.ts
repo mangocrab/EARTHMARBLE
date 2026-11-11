@@ -336,49 +336,92 @@ test("간조는 맵을 눌러 목적지로 이동하고 도착 카드를 연다"
   );
   expect(position).toBe(31);
 });
-test("뽑기 연출 후 카드 공개, 이후 뽑은 사람 보관함에 들어간다", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await start(page);
-  await seed(page, (save) => {
-    const g = save.room.game;
-    g.players[0].position = 39;
-    g.phase = "roll";
-    g.drawPile = [24, ...g.drawPile.filter((id: number) => id !== 24)];
-  });
-  await page.addInitScript(() => {
-    let n = 0;
-    crypto.getRandomValues = ((b: Uint32Array) => {
-      b[0] = n++ % 2;
-      return b;
-    }) as typeof crypto.getRandomValues;
-  });
-  await page.reload();
-  await page.getByRole("button", { name: "주사위 굴리기" }).click();
-  const reveal = page.getByRole("dialog", { name: "공개 탐사 카드" });
-  await expect(reveal).toContainText("만조 탈출권");
-  await page.waitForTimeout(1600);
-  await page.screenshot({ path: "test-results-pages/public-card-mobile.png" });
-  const during = await page.evaluate(
-    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
-    KEY,
+for (const dark of [false, true]) {
+  test(
+    dark
+      ? "다크모드 뽑기 카드도 어둡고 글자가 읽히며 공개 후 보관된다"
+      : "뽑기 연출 후 카드 공개, 이후 뽑은 사람 보관함에 들어간다",
+    async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await start(page);
+      if (dark) {
+        await page.getByRole("button", { name: "설정", exact: true }).click();
+        await page.getByLabel("다크모드", { exact: true }).check();
+        await page.keyboard.press("Escape");
+      }
+      await seed(page, (save) => {
+        const g = save.room.game;
+        g.players[0].position = 39;
+        g.phase = "roll";
+        g.drawPile = [24, ...g.drawPile.filter((id: number) => id !== 24)];
+      });
+      await page.addInitScript(() => {
+        let n = 0;
+        crypto.getRandomValues = ((b: Uint32Array) => {
+          b[0] = n++ % 2;
+          return b;
+        }) as typeof crypto.getRandomValues;
+      });
+      await page.reload();
+      await page.getByRole("button", { name: "주사위 굴리기" }).click();
+      const reveal = page.getByRole("dialog", { name: "공개 탐사 카드" });
+      await expect(reveal).toContainText("만조 탈출권");
+      if (dark) {
+        const colors = await reveal
+          .locator(".draw-card-front")
+          .evaluate((e) => {
+            const style = getComputedStyle(e);
+            const luminance = (color: string) => {
+              const rgb = color
+                .match(/[\d.]+/g)!
+                .slice(0, 3)
+                .map(Number)
+                .map((v) => {
+                  const c = v / 255;
+                  return c <= 0.04045
+                    ? c / 12.92
+                    : ((c + 0.055) / 1.055) ** 2.4;
+                });
+              return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+            };
+            const bg = luminance(style.backgroundColor),
+              fg = luminance(style.color);
+            return {
+              bg,
+              contrast: (Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05),
+            };
+          });
+        expect(colors.bg).toBeLessThan(0.08);
+        expect(colors.contrast).toBeGreaterThan(7);
+      }
+
+      await page.waitForTimeout(1600);
+      await page.screenshot({
+        path: dark
+          ? "test-results-pages/public-card-dark-mobile.png"
+          : "test-results-pages/public-card-mobile.png",
+      });
+      const during = await page.evaluate(
+        (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+        KEY,
+      );
+      expect(during.players[0].held).toEqual([]);
+      expect(during.players[1].held).toEqual([]);
+      await expect(reveal).toHaveCount(0, { timeout: 6000 });
+      const after = await page.evaluate(
+        (key) => JSON.parse(localStorage.getItem(key)!).room.game,
+        KEY,
+      );
+      expect(after.players[0].held).toEqual([24]);
+      expect(after.players[1].held).toEqual([]);
+      expect(
+        after.drawPile.length +
+          after.discardPile.length +
+          after.players.flatMap((p: any) => p.held).length,
+      ).toBe(30);
+    },
   );
-  expect(during.players[0].held).toEqual([]);
-  expect(during.players[1].held).toEqual([]);
-  await expect(reveal).toHaveCount(0, { timeout: 6000 });
-  const after = await page.evaluate(
-    (key) => JSON.parse(localStorage.getItem(key)!).room.game,
-    KEY,
-  );
-  expect(after.players[0].held).toEqual([24]);
-  expect(after.players[1].held).toEqual([]);
-  expect(
-    after.drawPile.length +
-      after.discardPile.length +
-      after.players.flatMap((p: any) => p.held).length,
-  ).toBe(30);
-});
+}
 
 test("수동 매각은 비싼 시설부터, 부족분 자동 매각은 건물 우선으로 정산한다", async ({
   page,
