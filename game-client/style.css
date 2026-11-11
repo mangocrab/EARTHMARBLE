@@ -3647,176 +3647,7 @@ textarea {
     margin: 6px;
   }
 }
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  background: #142025;
-  color: #deebe6;
-  --green: #9bd1ba;
-  --line: #3c5557;
-  --muted: #a8bcb5;
-}
-[data-theme="dark"] body {
-  background: #142025;
-}
-[data-theme="dark"]
-  :is(
-    .header,
-    .lobby-desk,
-    .waiting,
-    .player,
-    .personal-panel,
-    .modal,
-    .payment-dialog,
-    .chat-preview,
-    .chat-log,
-    .observer-list article,
-    .profile-card,
-    .room-list-item,
-    .help-content,
-    .property-list,
-    .assets-detail
-  ) {
-  background: #1b2b30;
-  color: #deebe6;
-}
-[data-theme="dark"] :is(input, select, textarea) {
-  background: #20353b;
-  color: #e3efe9;
-  border-color: #506768;
-}
-[data-theme="dark"]
-  :is(
-    .board,
-    .board-center,
-    .board-scroll,
-    .mobile-controls,
-    .action-area,
-    .personal-buttons button,
-    .my-cash,
-    .crew-list article,
-    .empty-seat,
-    .game-meta
-  ) {
-  background: #1c2e32;
-  color: #deebe6;
-}
-[data-theme="dark"] :is(.modal-overlay, .arrival-overlay) {
-  background: #060e13b8;
-}
-[data-theme="dark"]
-  :is(
-    .deed,
-    .deed-front,
-    .deed-back,
-    .card-front,
-    .card-back,
-    .exploration-card,
-    .payment-summary,
-    .payment-details,
-    .payment-actions,
-    .slow-match-offer
-  ) {
-  background: #22363a;
-  color: #e4eee8;
-  border-color: #49605d;
-}
-[data-theme="dark"] .tile {
-  background: #263b3b;
-  color: #e1ede6;
-  border-color: #58706a;
-}
-[data-theme="dark"] .tile.z1 {
-  background: #243d49;
-}
-[data-theme="dark"] .tile.z2 {
-  background: #343749;
-}
-[data-theme="dark"] .tile.z3 {
-  background: #3c3547;
-}
-[data-theme="dark"] .tile.card-tile {
-  background: #4c4426;
-}
-[data-theme="dark"] .tile.special-tile {
-  background: #50392a;
-}
-[data-theme="dark"] .tile.bigbang-tile {
-  background: #080c10;
-  color: #e6ede8;
-}
-[data-theme="dark"]
-  :is(
-    .tile-price,
-    .fine,
-    .eyebrow,
-    .room-list-item small,
-    .player-last-action,
-    .player-stats,
-    .dock-clock,
-    .chat-message time,
-    .deed-subtitle,
-    .deed-science
-  ) {
-  color: #b4c8bd;
-}
-[data-theme="dark"]
-  :is(h1, h2, h3, h4, strong, .brand, .my-cash, .player-heading b) {
-  color: inherit;
-}
-[data-theme="dark"] .primary {
-  background: #386b59;
-  color: #f1faf4;
-}
-[data-theme="dark"] button:hover:not(:disabled) {
-  background: #344b49;
-}
-[data-theme="dark"] .room-list-item.playing-room {
-  background: #101b20;
-  border-color: #52645f;
-}
-[data-theme="dark"] .room-list-item.playing-room b {
-  color: #bacdc4;
-}
-[data-theme="dark"] .spectator-badge {
-  background: #3d2f50;
-  color: #e2c8ff;
-  border-color: #8b6ba7;
-}
-[data-theme="dark"] .watching-player {
-  outline-color: #c198e6;
-}
-[data-theme="dark"] .records-table :is(td, th) {
-  border-color: #49605d;
-}
-[data-theme="dark"]
-  :is(
-    .live-activity,
-    .mobile-action-dock,
-    .arrival-pass,
-    .arrival-choice,
-    .deed-total,
-    .fund-total,
-    .deed-heading,
-    .deed-flip,
-    .card-reveal,
-    .card-content,
-    .turn-label,
-    .unlock,
-    .fund-panel,
-    .desk,
-    .lobby-actions button,
-    .records-table thead
-  ) {
-  background: #243d40;
-  color: #e1eee6;
-  border-color: #49615c;
-}
-[data-theme="dark"] .live-activity strong {
-  color: #c6e4d3;
-}
-[data-theme="dark"] .tile:hover {
-  background: #42544b !important;
-}
+
 .overview .tile b {
   font-size: var(--tile-font, 10px) !important;
 }
@@ -3877,19 +3708,7 @@ textarea {
     display: none;
   }
 }
-[data-theme="dark"] .front-prices,
-[data-theme="dark"] .deed .flip-button {
-  background: #2b4646;
-  color: #e0eee6;
-  border-color: #688277;
-}
-[data-theme="dark"] .deed-front > p,
-[data-theme="dark"] .deed-front > small {
-  color: #bad0bd;
-}
-[data-theme="dark"] .dice-result {
-  color: #d2e5d8;
-}
+
 @media (min-width: 1191px) {
   .game-active .players-panel .player {
     padding: 10px;
@@ -3898,4 +3717,425 @@ textarea {
   .game-active .players-panel h2 {
     margin-bottom: 14px;
   }
+}
+/* Evening expedition: the same paper, sage and earth pigments as the light theme. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --night: #1c241e;
+  --paper: #293127;
+  --paper-raised: #30392d;
+  --paper-inset: #232c23;
+  --ink: #ede8d8;
+  --ink-soft: #c2c8b5;
+  --green: #afc39b;
+  --line: #495442;
+  --muted: #aeb99f;
+  --brass: #c6b286;
+  background: var(--night);
+  color: var(--ink);
+}
+[data-theme="dark"] body {
+  background: radial-gradient(ellipse at 15% 0%, #a9b98a0c, transparent 55%)
+    var(--night);
+}
+[data-theme="dark"] .header {
+  background: #20291f;
+  border-color: #414e3d;
+}
+[data-theme="dark"] .brand {
+  color: var(--ink);
+}
+[data-theme="dark"]
+  :is(.hero h1, .hero-meta, .waiting h1, .game-layout h2, .profile-heading h3) {
+  color: var(--ink);
+}
+[data-theme="dark"] .hero h1 > span {
+  color: #b9c9a5;
+}
+[data-theme="dark"]
+  :is(
+    .hero > p,
+    .subtle,
+    .hero-meta small,
+    .zones p,
+    .footer,
+    .fine,
+    .eyebrow,
+    .game-meta,
+    .dock-clock,
+    .room-list-item small,
+    .player-last-action,
+    .player-stats,
+    .chat-message time
+  ) {
+  color: var(--muted);
+}
+[data-theme="dark"] :is(.coordinate, .edition, .zones small) {
+  color: #b5ad91;
+}
+[data-theme="dark"] .hero-meta > span {
+  border-color: var(--line);
+}
+[data-theme="dark"]
+  :is(
+    .departure,
+    .waiting,
+    .modal,
+    .payment-dialog,
+    .profile-card,
+    .room-list-item,
+    .observer-list article
+  ) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
+  box-shadow: 0 8px 30px #0c130c26;
+}
+[data-theme="dark"] .departure {
+  background: linear-gradient(145deg, #30392c, #283125);
+  box-shadow: 0 12px 38px #0b120b32;
+}
+[data-theme="dark"] :is(input, select, textarea) {
+  background: var(--paper-inset);
+  color: var(--ink);
+  border-color: #536049;
+}
+[data-theme="dark"] :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+[data-theme="dark"] button {
+  border-color: var(--line);
+}
+[data-theme="dark"] button:hover:not(:disabled) {
+  background: #3c4934;
+  border-color: #7d8c6c;
+}
+[data-theme="dark"] :is(button, a):focus-visible {
+  outline-color: var(--brass);
+}
+[data-theme="dark"] .primary,
+[data-theme="dark"] .lobby-actions button.primary {
+  background: #afc39b;
+  color: #213323;
+  border-color: #afc39b;
+  box-shadow:
+    inset 0 1px #f4f0da26,
+    0 3px 10px #101a1026;
+}
+[data-theme="dark"] .primary:hover:not(:disabled) {
+  background: #c1d1ad;
+  border-color: #c1d1ad;
+}
+[data-theme="dark"] .lobby-actions button {
+  background: #333e2f;
+}
+[data-theme="dark"] .lobby-actions .primary small {
+  color: #344d31;
+}
+[data-theme="dark"] .lobby-actions small {
+  color: var(--muted);
+}
+[data-theme="dark"] :is(.player, .crew-list article, .empty-seat) {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
+}
+[data-theme="dark"] .player.current {
+  background: #303e2d;
+  border-color: #a6bc91;
+  box-shadow: inset 3px 0 #a6bc91;
+}
+[data-theme="dark"]
+  :is(.player-heading b, .player > strong, .my-cash, .personal-panel h2) {
+  color: var(--ink);
+}
+[data-theme="dark"] .personal-panel {
+  background: transparent;
+  color: var(--ink);
+}
+[data-theme="dark"] :is(.my-cash, .unlock, .fund-panel) {
+  background: #283526;
+  border-color: var(--line);
+}
+[data-theme="dark"]
+  :is(.personal-buttons button, .mobile-controls, .mobile-action-dock) {
+  background: #293427;
+  color: var(--ink);
+  border-color: #58654d;
+}
+[data-theme="dark"]
+  :is(
+    .personal-buttons span,
+    .unlock small,
+    .fund-panel small,
+    .my-cash > span
+  ) {
+  color: var(--muted);
+}
+[data-theme="dark"] .board-scroll {
+  background: transparent;
+}
+[data-theme="dark"] .board {
+  background: #46523d;
+  border-color: #667457;
+  box-shadow: 0 6px 22px #0d140d25;
+}
+[data-theme="dark"] .board-center {
+  background: radial-gradient(ellipse at 50% 35%, #34432f, #283727 78%);
+  color: var(--ink);
+}
+[data-theme="dark"] .board-center > h2 {
+  color: #e7e5ce;
+}
+[data-theme="dark"] .board-center > h2 span {
+  color: #aaba96;
+}
+[data-theme="dark"] .tile {
+  background: #3c362b;
+  color: #e1c5a5;
+  border-top-color: var(--zone);
+  box-shadow: inset 0 0 0 1px #efe5c808;
+}
+[data-theme="dark"] .tile.z1 {
+  background: #2d403c;
+  color: #c1d8ce;
+}
+[data-theme="dark"] .tile.z2 {
+  background: #39432f;
+  color: #d2ddb9;
+}
+[data-theme="dark"] .tile.z3 {
+  background: #3e3947;
+  color: #d9cde0;
+}
+[data-theme="dark"] .tile.card-tile {
+  background: #4d452b;
+  color: #ecdda4;
+}
+[data-theme="dark"] .tile.special-tile {
+  background: #503b2b;
+  color: #efd0ab;
+}
+[data-theme="dark"] .tile.bigbang-tile {
+  background: #151a16;
+  color: #d6d8c9;
+}
+[data-theme="dark"] .tile:hover {
+  background: color-mix(in srgb, var(--zone) 30%, #333c2e) !important;
+}
+[data-theme="dark"] .tile-price {
+  color: color-mix(in srgb, currentColor 75%, #c2c6b4);
+}
+[data-theme="dark"] .tile > small {
+  color: #c6c5a5;
+}
+[data-theme="dark"] .corner {
+  background: #384530;
+  color: #dce2c4;
+}
+[data-theme="dark"] .tile.corner {
+  border-top-color: transparent;
+}
+[data-theme="dark"] :is(.live-activity, .turn-label) {
+  background: #38472f;
+  color: #e0e5cb;
+  border-color: #637450;
+}
+[data-theme="dark"] .live-activity strong {
+  color: #dae3c2;
+}
+[data-theme="dark"] .live-activity p {
+  color: #bfcdb0;
+}
+[data-theme="dark"] .action-area {
+  background: transparent;
+  color: var(--ink);
+}
+[data-theme="dark"] :is(.dice-result, .turn-label) {
+  color: #d8dfbd;
+}
+[data-theme="dark"] .board-caption {
+  color: #a5b391;
+}
+[data-theme="dark"] .board-caption b {
+  color: #d1d7bd;
+}
+[data-theme="dark"] .timer {
+  background: #414e35;
+}
+[data-theme="dark"] .timer > span {
+  background: #b5c796;
+}
+[data-theme="dark"] .timer small {
+  color: #c5cfae;
+}
+[data-theme="dark"] .z0:not(.tile) {
+  color: #cfab80;
+}
+[data-theme="dark"] .z1:not(.tile) {
+  color: #9fc9c0;
+}
+[data-theme="dark"] .z2:not(.tile) {
+  color: #c1d09d;
+}
+[data-theme="dark"] .z3:not(.tile) {
+  color: #bfb1cf;
+}
+[data-theme="dark"] :is(.modal-overlay, .arrival-overlay) {
+  background: #0b120bcc;
+}
+[data-theme="dark"]
+  :is(
+    .deed,
+    .deed-front,
+    .deed-back,
+    .card-front,
+    .card-back,
+    .exploration-card,
+    .card-reveal,
+    .card-content
+  ) {
+  background: #2d352a;
+  color: var(--ink);
+  border-color: #606b51;
+}
+[data-theme="dark"] .deed {
+  box-shadow: 0 22px 70px #080f0859;
+}
+[data-theme="dark"] .deed-heading {
+  background: color-mix(in srgb, var(--zone) 16%, #30382b);
+  color: var(--ink);
+  border-bottom-color: var(--zone);
+}
+[data-theme="dark"]
+  :is(.deed-front > p, .deed-front > small, .deed-subtitle, .deed-science) {
+  color: var(--ink-soft);
+}
+[data-theme="dark"] :is(.front-prices, .deed-total, .fund-total) {
+  background: #3a4332;
+  color: #e9e5ce;
+  border-color: #6b7659;
+}
+[data-theme="dark"] .front-prices {
+  box-shadow: inset 0 1px #cbb88621;
+}
+[data-theme="dark"] :is(.front-prices b, .deed-total strong) {
+  color: #e7d8aa;
+}
+[data-theme="dark"] .deed .flip-button {
+  background: #39432f;
+  color: #d8dfbf;
+  border-color: #657454;
+}
+[data-theme="dark"] .deed .flip-button:hover {
+  background: #46513a;
+}
+[data-theme="dark"] :is(.arrival-pass, .arrival-choice) {
+  background: #303d2b;
+  color: var(--ink);
+  border-color: #6f805b;
+}
+[data-theme="dark"]
+  :is(.deed-back th, .deed-back td, .records-table td, .records-table th) {
+  border-color: var(--line);
+}
+[data-theme="dark"] :is(.payment-summary, .payment-actions) {
+  background: #35412e;
+  color: var(--ink);
+  border-color: var(--line);
+}
+[data-theme="dark"] .payment-details {
+  background: var(--paper);
+  color: var(--ink);
+}
+[data-theme="dark"] :is(.chat-preview, .chat-log) {
+  background: #273225;
+  color: var(--ink);
+  border-color: #4c5c42;
+}
+[data-theme="dark"] .chat-preview-open {
+  background: #34412d;
+  border-color: #657652;
+}
+[data-theme="dark"] .chat-preview-open b {
+  color: #dfdfbf;
+}
+[data-theme="dark"] :is(.chat-preview-open span, .chat-preview-lines .fine) {
+  color: #bfcbac;
+}
+[data-theme="dark"] .spectator-badge {
+  background: #45384b;
+  color: #dfc9e5;
+  border-color: #846b8e;
+}
+[data-theme="dark"] .spectator-message {
+  border-left-color: #a58ab2;
+}
+[data-theme="dark"] .watching-player {
+  outline-color: #ba9ac7;
+}
+[data-theme="dark"] .room-list-item.playing-room {
+  background: #20291f;
+  border-color: #46543d;
+}
+[data-theme="dark"] .room-list-item.playing-room b {
+  color: #bac5a9;
+}
+[data-theme="dark"] .slow-match-offer {
+  background: #423e2b;
+  color: #e4dbbc;
+  border-color: #91825b;
+}
+[data-theme="dark"] .records-table thead {
+  background: #36422e;
+  color: #e1e4c9;
+}
+[data-theme="dark"] input {
+  accent-color: var(--green);
+}
+[data-theme="dark"] {
+  scrollbar-color: #778366 #252f24;
+}
+[data-theme="dark"] .volume-setting input[type="range"] {
+  accent-color: #afc39b;
+}
+[data-theme="dark"] .toll-formula,
+[data-theme="dark"] .usage,
+[data-theme="dark"] .profile-total,
+[data-theme="dark"] .latest-card {
+  background: #394331;
+  color: #e5dfc7;
+  border-color: #59684a;
+}
+[data-theme="dark"] .card-art {
+  background: #3e4d34;
+  color: #b4c799;
+}
+[data-theme="dark"] :is(.latest-card small, .text-button) {
+  color: #b6c5a1;
+}
+[data-theme="dark"] .arrival-pass button,
+[data-theme="dark"] .arrival-choices small {
+  background: #313b2d;
+  color: #dddcc4;
+  border-color: #687653;
+}
+[data-theme="dark"] .arrival-choices button:not(:disabled) {
+  background: #afc39b;
+  color: #213323;
+  border-color: #afc39b;
+}
+[data-theme="dark"] .arrival-choices button:disabled,
+[data-theme="dark"] .payment-actions button:disabled {
+  background: #30382b;
+  color: #9ba68c;
+  border-color: #4e5b40;
+}
+[data-theme="dark"] .drawn-card,
+[data-theme="dark"] .draw-card-front {
+  background: #d8cba8;
+  color: #303a29;
+  border-color: #c0a459;
+  box-shadow: 0 20px 65px #0c130b80;
 }
