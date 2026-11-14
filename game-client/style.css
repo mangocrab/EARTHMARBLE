@@ -4639,3 +4639,397 @@ textarea {
   margin: 0;
   line-height: 23px;
 }
+
+/* The physical deck and the travelling stack use the same dark palette. */
+[data-theme="dark"] .draw-source-deck {
+  background: #292b33;
+  color: #c6c7d0;
+  border-color: #7a7c88;
+  box-shadow:
+    4px 4px 0 #40424b,
+    7px 7px 0 #292b33,
+    10px 10px 0 #545663;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.chat-preview,
+.chat-preview.in-game {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  height: auto;
+  min-height: 54px;
+  padding: 5px 8px;
+  gap: 4px 10px;
+}
+.chat-preview-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+  min-width: 0;
+}
+.chat-preview-toolbar button {
+  min-height: 36px;
+  padding: 5px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.chat-preview-open b {
+  font-size: 12px;
+}
+.chat-preview-open svg {
+  width: 16px;
+  height: 16px;
+}
+.chat-preview-lines {
+  overflow: hidden;
+}
+.chat-preview-lines p {
+  line-height: 21px;
+  margin: 0;
+}
+.chat-composer {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 0;
+  margin: 8px 0 0;
+}
+.chat-composer textarea {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  resize: none;
+  min-height: 36px;
+  max-height: 80px;
+  margin: 0;
+  padding: 8px 10px;
+  line-height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fcfbf6;
+  font-size: 14px;
+}
+.chat-composer button {
+  padding: 6px 12px;
+  min-width: 52px;
+  font-size: 12px;
+}
+.inline-composer {
+  grid-column: 1/-1;
+  margin: 0;
+}
+.game-active .game-layout {
+  height: calc(
+    100dvh - var(--game-header-height, 48px) - var(--chat-height, 96px) - 6px
+  );
+  min-height: 0;
+}
+.chat-tools {
+  display: flex;
+  gap: 5px;
+  margin: 0 0 12px;
+}
+.chat-tools button {
+  flex: 1;
+  padding: 9px 5px;
+  font-size: 12px;
+}
+.chat-tools button[aria-pressed="true"] {
+  border-color: currentColor;
+  background: #8990991a;
+  font-weight: 700;
+}
+.chat-dialog {
+  width: min(560px, 100%);
+  padding: 22px;
+}
+.chat-dialog > .eyebrow {
+  display: none;
+}
+.chat-dialog > h2 {
+  margin: 0 30px 16px 0;
+  font-size: 20px;
+}
+.chat-dialog .chat-log {
+  max-height: min(48dvh, 420px);
+  min-height: 100px;
+}
+.chat-rate {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.chat-turn-notice {
+  position: fixed;
+  z-index: 500;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #af853f;
+  border-radius: 10px;
+  background: #fcf2d9;
+  color: #493922;
+  box-shadow: 0 6px 28px #0002;
+  font-size: 13px;
+}
+.chat-turn-notice button {
+  padding: 6px 8px;
+}
+.chat-turn-notice span {
+  font-size: 11px;
+}
+[data-theme="dark"] .chat-composer textarea {
+  background: #242427;
+  color: #e2e2e5;
+  border-color: #48484d;
+}
+[data-theme="dark"] .chat-turn-notice {
+  background: #38332d;
+  color: #e7d6b4;
+  border-color: #82725a;
+}
+@media (max-width: 600px) {
+  .chat-preview,
+  .chat-preview.in-game {
+    gap: 3px 5px;
+    padding: 4px 5px;
+  }
+  .chat-preview-toolbar {
+    gap: 3px;
+  }
+  .chat-preview-toolbar button {
+    font-size: 10px;
+    padding: 4px 5px;
+  }
+  .chat-preview-open b {
+    font-size: 10px;
+  }
+  .chat-preview-open svg {
+    display: none;
+  }
+  .chat-preview-lines p {
+    font-size: 10px;
+    line-height: 19px;
+  }
+  .chat-preview-lines .chat-preview-sticker {
+    width: 19px;
+    height: 19px;
+  }
+  .chat-dialog {
+    padding: 18px 14px;
+    max-height: calc(100dvh - 24px);
+  }
+  .social-modal {
+    padding: 12px;
+  }
+  .chat-turn-notice span {
+    display: none;
+  }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .social-modal {
+    padding: 6px;
+  }
+  .chat-dialog {
+    max-height: calc(100dvh - 12px);
+    padding: 12px 18px;
+  }
+  .chat-dialog > h2 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .chat-dialog .chat-log {
+    max-height: 30dvh;
+    min-height: 60px;
+  }
+  .chat-dialog .emoji-tray {
+    grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+  }
+  .chat-dialog .emoji-tray img {
+    max-width: 60px;
+  }
+}
+.community-portrait {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+.community-portrait .avatar-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.community-portrait .community-frame {
+  position: absolute;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  max-width: none;
+  object-fit: contain;
+  pointer-events: none;
+  border-radius: 0;
+}
+.community-banner {
+  display: block;
+  width: 100%;
+  height: clamp(80px, 18vh, 160px);
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.community-title {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 7px;
+  background: #8990991a;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  margin-top: 4px;
+}
+.profile-heading .avatar {
+  overflow: visible;
+}
+.chat-preview:focus-within {
+  position: relative;
+  z-index: 260;
+}
+/* Keep the composer available beside game decisions, below social dialogs. */
+.chat-preview {
+  position: relative;
+  z-index: 130;
+}
+.game-active .game-layout {
+  height: calc(
+    var(--view-height, 100dvh) - var(--game-header-height, 48px) -
+      var(--chat-height, 96px) - 6px
+  );
+}
+.game-active
+  :is(
+    .payment-overlay,
+    .arrival-overlay,
+    .card-reveal-overlay,
+    .result-overlay
+  ) {
+  top: var(--game-header-height, 48px);
+  bottom: var(--chat-height, 96px);
+}
+.game-active :is(.payment-overlay, .result-overlay) .payment-dialog {
+  max-height: 100%;
+}
+.game-active .arrival-overlay .deed {
+  max-height: 100%;
+}
+.game-active .draw-card-front {
+  max-height: min(
+    var(--reveal-height),
+    calc(
+      var(--view-height, 100dvh) - var(--game-header-height, 48px) -
+        var(--chat-height, 96px) - 24px
+    )
+  );
+}
+@media (max-width: 600px) {
+  .chat-composer textarea {
+    font-size: 16px;
+  }
+}
+@media (max-width: 1190px) and (max-height: 500px) and (min-width: 600px) {
+  .players-panel .player {
+    padding: 3px 4px;
+  }
+  .players-panel .player-heading b {
+    font-size: 9px;
+  }
+  .players-panel .avatar {
+    width: 14px;
+    height: 14px;
+  }
+  .players-panel .player > strong {
+    margin-top: 1px;
+    font-size: 12px;
+  }
+  .players-panel .player-last-action {
+    -webkit-line-clamp: 1;
+    font-size: 8px;
+    margin: 1px 0 0;
+    line-height: 1.2;
+  }
+  .game-layout {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .personal-buttons button {
+    padding: 4px;
+    font-size: 10px;
+    min-height: 26px;
+  }
+  .mobile-controls {
+    align-self: end;
+    min-height: 0;
+    max-height: 100%;
+  }
+  .mobile-action-dock {
+    max-height: 100%;
+  }
+}
+.game-active .property-overlay {
+  top: var(--game-header-height, 48px);
+  bottom: var(--chat-height, 96px);
+}
+.game-active .property-overlay .deed {
+  max-height: 100%;
+}
+.crew-list .avatar,
+.player-heading .avatar {
+  overflow: visible;
+}
+@media (max-height: 500px) and (min-width: 600px) {
+  .game-active :is(.payment-overlay, .result-overlay) .payment-dialog {
+    width: min(650px, 100%);
+    height: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 1.2fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .game-active :is(.payment-overlay, .result-overlay) .payment-heading {
+    grid-column: 1/-1;
+    grid-row: 1;
+  }
+  .game-active :is(.payment-overlay, .result-overlay) .payment-summary {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .game-active :is(.payment-overlay, .result-overlay) .payment-details {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .game-active :is(.payment-overlay, .result-overlay) .payment-actions {
+    grid-column: 2;
+    grid-row: 2/4;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: center;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}

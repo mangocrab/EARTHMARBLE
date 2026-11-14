@@ -118,6 +118,17 @@ async function wholeBoard(page: Page) {
               r.bottom <= map.bottom + 1
             );
           });
+        const personal = document
+          .querySelector(".personal-panel")!
+          .getBoundingClientRect();
+        const people = document
+          .querySelector(".players-panel")!
+          .getBoundingClientRect();
+        const sideFits =
+          innerHeight > 500 ||
+          innerWidth < 600 ||
+          (personal.top >= people.bottom - 1 &&
+            controls.top >= personal.bottom - 1);
         const overlaps =
           map.left < controls.right - 1 &&
           map.right > controls.left + 1 &&
@@ -136,6 +147,7 @@ async function wholeBoard(page: Page) {
         });
         return (
           inside &&
+          sideFits &&
           tilesFit &&
           labels &&
           !overlaps &&
@@ -174,6 +186,22 @@ for (const [width, height] of [
       return r.continue();
     });
     await start(page, "3");
+    const inline = page.getByRole("textbox", {
+      name: "바로 채팅 입력",
+      exact: true,
+    });
+    await expect(inline).toBeInViewport();
+    expect(
+      await inline.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return (
+          document.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          ) === el
+        );
+      }),
+    ).toBe(true);
     await wholeBoard(page);
     await expect(page.locator('[data-tile="2"]')).toHaveCSS(
       "border-top-color",
@@ -705,12 +733,16 @@ test("매각한 건물은 서서히, 땅의 소유 삼각형은 한 번 빛난 �
   ).toHaveCount(0);
 });
 
-for (const panel of ["property", "cards"]) {
+for (const panel of ["property", "cards", "가로 화면의 보유"]) {
   test(`종료 시 열린 ${panel} 카드를 닫고 가려지지 않은 버튼으로 로비에 돌아간다`, async ({
     page,
   }) => {
     await page.clock.install({ time: new Date() });
-    await page.setViewportSize({ width: 320, height: 568 });
+    await page.setViewportSize(
+      panel === "가로 화면의 보유"
+        ? { width: 667, height: 375 }
+        : { width: 320, height: 568 },
+    );
     await start(page, "3");
     if (panel === "property") {
       await page.getByLabel("탐사 지역 상세 보기").selectOption("1");
@@ -1098,6 +1130,7 @@ for (const width of [320, 768, 1440]) {
     await start(page);
     await page.getByRole("button", { name: "채팅", exact: true }).click();
     const panel = page.locator(".chat-panel");
+    await panel.getByRole("button", { name: "이모티콘", exact: true }).click();
     await expect(panel.locator(".emoji-tray button")).toHaveCount(10);
     const girl = panel.getByRole("button", {
       name: "양이 하트 이모티콘",
@@ -1122,7 +1155,7 @@ for (const width of [320, 768, 1440]) {
     ).toBe(true);
     await girl.click();
     await expect(
-      panel.getByRole("log").getByAltText("양이 하트"),
+      page.getByRole("region", { name: "최근 채팅" }).getByAltText("양이 하트"),
     ).toBeVisible();
     await expect(girl).toBeDisabled();
     await panel.getByRole("button", { name: "지온", exact: true }).click();
@@ -1161,3 +1194,102 @@ for (const width of [320, 768, 1440]) {
       }
   });
 }
+
+test("게임 단계가 바뀌어도 채팅의 글·커서·포커스를 유지하고 내 차례를 알린다", async ({
+  page,
+}) => {
+  await start(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await seed(page, (save) => {
+    const g = save.room.game;
+    g.turn = 1;
+    g.phase = "end";
+    g.extra = false;
+    g.doubles = 0;
+  });
+  await page.getByRole("button", { name: "채팅", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "채팅 메시지", exact: true });
+  await text.fill("아직 작성 중인 채팅");
+  await text.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(3, 3));
+  await page.clock.fastForward(1500);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "내 차례입니다!" }),
+  ).toBeVisible();
+  await expect(text).toBeFocused();
+  await expect(text).toHaveValue("아직 작성 중인 채팅");
+  expect(
+    await text.evaluate((el: HTMLTextAreaElement) => el.selectionStart),
+  ).toBe(3);
+  // Switching to quick phrases and stickers keeps the shared text draft.
+  await page
+    .locator(".chat-panel")
+    .getByRole("button", { name: "퀵채팅", exact: true })
+    .click();
+  await expect(page.locator(".quick-chat button")).toHaveCount(6);
+  await page
+    .locator(".chat-panel")
+    .getByRole("button", { name: "이모티콘", exact: true })
+    .click();
+  await expect(page.locator(".emoji-tray button")).toHaveCount(10);
+  await page
+    .locator(".chat-panel")
+    .getByRole("button", { name: "채팅 내역", exact: true })
+    .click();
+  await expect(text).toHaveValue("아직 작성 중인 채팅");
+  await page.keyboard.press("Escape");
+  const inline = page.getByRole("textbox", {
+    name: "바로 채팅 입력",
+    exact: true,
+  });
+  await expect(inline).toHaveValue("아직 작성 중인 채팅");
+  await inline.focus();
+  await inline.evaluate((el) =>
+    el.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        isComposing: true,
+      }),
+    ),
+  );
+  await expect(page.locator(".chat-preview-lines")).not.toContainText(
+    "아직 작성 중인 채팅",
+  );
+  await inline.press("Enter");
+  await expect(page.locator(".chat-preview-lines")).toContainText(
+    "아직 작성 중인 채팅",
+  );
+});
+test("이동·카드 공개 중에도 하단에서 입력하고 다크모드 덱 전체가 같은 색을 사용한다", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  await page.getByRole("button", { name: "설정", exact: true }).click();
+  await page.getByLabel("다크모드", { exact: true }).check();
+  await page.keyboard.press("Escape");
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await page.getByRole("button", { name: /^주사위 굴리기/ }).click();
+  const input = page.getByRole("textbox", {
+    name: "바로 채팅 입력",
+    exact: true,
+  });
+  await input.fill("이동하는 동안에도 대화");
+  await page.clock.fastForward(3500);
+  await expect(page.locator(".draw-source-deck")).toBeVisible();
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("이동하는 동안에도 대화");
+  expect(
+    await page
+      .locator(".draw-source-deck")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+  ).toBe(
+    await page
+      .locator(".deck-back")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+  );
+  await expect(input).toBeInViewport();
+  await page.screenshot({ path: "test-results-pages/dark-chat-draw.png" });
+});

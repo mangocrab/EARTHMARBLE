@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { IdentityAdapter } from "../../identity-adapter";
+import type { IdentityAdapter, CommunityProfile } from "../../identity-adapter";
 export function signAccount(
-  account: { id: string; name: string; profile?: string },
+  account: { id: string; name: string } & CommunityProfile,
   key: string,
 ) {
   const body = Buffer.from(JSON.stringify(account)).toString("base64url");

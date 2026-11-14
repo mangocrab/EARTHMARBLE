@@ -45,7 +45,8 @@ npm start
 ```sh
 npm test              # 규칙·AI 시뮬레이션·실제 Socket.IO 서버 통합
 npm run build         # TypeScript 검사 + 프로덕션 클라이언트 빌드
-npm run test:e2e      # 위 빌드 후 PC 및 모바일 Chromium 테스트
+npm run build:community # 같은 서버의 커뮤니티 삽입 빌드
+npm run test:e2e      # 두 빌드 후 PC·모바일·커뮤니티 iframe Chromium 테스트
 ```
 
 브라우저 테스트는 `/usr/bin/chromium`이 있으면 사용합니다. 없으면 `npx playwright install --with-deps chromium`으로 Playwright Chromium과 시스템 의존성을 설치하세요. 테스트 서버는 별도 포트 `3196`/`3197`/`3198`/`3199`/`3202`을 사용합니다. 통합·수명주기·증서 동기화 테스트 DB는 임시 디렉터리, 기본 E2E DB는 `.data/e2e` 및 `.data/e2e-external`에 저장되어 실제 게임 DB를 건드리지 않습니다. 브라우저 테스트 결과·화면 캡처·실패 추적은 `test-results/`에 생성됩니다.
@@ -108,3 +109,5 @@ export function createIdentityAdapter(): IdentityAdapter {
 이 모듈의 경로를 `IDENTITY_ADAPTER_MODULE`에 지정하면 외부 모드로 시작합니다. 화면이 `/api/config`로 모드를 확인하고 사이트 인증 결과로 게임 세션을 자동 발급하므로 닉네임 등록이 필요하지 않습니다. HTTP와 WebSocket 연결·명령 모두 사이트 계정과 게임 세션의 ID를 확인합니다. 어댑터의 요청 입력은 두 경로에서 공통으로 사용할 수 있는 `headers`입니다. 사이트와 게임을 같은 출처 아래 프록시하면 별도 CORS 허용 없이 쿠키와 WebSocket을 함께 사용할 수 있습니다. 호스트 사이트에서 필요에 따라 `/api/session`을 직접 호출할 수도 있습니다. 프로필은 HTTPS 또는 사이트 내 절대 경로만 허용합니다. 브라우저가 전송한 사용자 ID·닉네임·프로필을 인증 근거로 신뢰하면 안 됩니다.
 
 서명형 테스트 어댑터로 자동 접속·프로필·위조 거부·재접속을 검증했습니다. 실제 대상 사이트의 인증 프로토콜과 계정 정보는 제공되지 않았으므로 특정 사이트의 인증 연동은 검증하지 않았습니다. 외부 포인트 API는 사용하지 않습니다.
+
+커뮤니티와 동일한 HTTP 서버·회원 계정을 사용하려면 `npm run build:community`와 `createEarthMarble({ app, httpServer, identityAdapter, basePath })`를 사용합니다. 계정·프로필 장식·회원별 이모티콘 연결 방법은 [커뮤니티 연동 안내](docs/WEBSITE.md#커뮤니티와-같은-http-서버에-붙이기)에 있습니다. 실제 커뮤니티 인증 함수는 해당 사이트 코드에 맞춰 연결해야 합니다.

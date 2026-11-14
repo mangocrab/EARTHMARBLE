@@ -122,6 +122,9 @@ test("서버 주소 없이 실제 두 브라우저가 자동 매칭된다", asyn
     await expect(A.getByRole("textbox", { name: "채팅 메시지" })).toHaveCount(
       0,
     );
+    await A.locator(".chat-panel")
+      .getByRole("button", { name: "이모티콘", exact: true })
+      .click();
     await A.getByRole("button", {
       name: "양이 하트 이모티콘",
       exact: true,
@@ -137,13 +140,16 @@ test("서버 주소 없이 실제 두 브라우저가 자동 매칭된다", asyn
       A.getByRole("button", { name: "양이 하트 이모티콘", exact: true }),
     ).toBeDisabled();
     await B.getByRole("button", { name: "채팅", exact: true }).click();
+    await B.locator(".chat-panel")
+      .getByRole("button", { name: "이모티콘", exact: true })
+      .click();
     await B.getByRole("button", { name: "지온", exact: true }).click();
     await B.getByRole("button", {
       name: "지온 최고 이모티콘",
       exact: true,
     }).click();
     await expect(
-      A.getByRole("log", { name: "방 채팅" }).getByAltText("지온 최고"),
+      A.getByRole("region", { name: "최근 채팅" }).getByAltText("지온 최고"),
     ).toBeVisible();
   } finally {
     await a.close();

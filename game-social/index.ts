@@ -145,11 +145,14 @@ export function chat(
     kind = "quick";
     text = QUICK_CHATS[Number(input.quick)];
   } else if (input.kind === "emoji") {
-    emoji = quickEmoji(input.emoji);
-    if (s.mode !== "private" && !emoji)
-      throw new Error("매칭 게임은 퀵채팅만 사용할 수 있습니다.");
-    emoji ||= s.emojis.find((e) => e.id === input.emoji);
-    if (!emoji) throw new Error("사용할 수 없는 이모티콘입니다.");
+    emoji =
+      quickEmoji(input.emoji) || s.emojis.find((e) => e.id === input.emoji);
+    if (!emoji)
+      throw new Error(
+        s.mode === "private"
+          ? "사용할 수 없는 이모티콘입니다."
+          : "퀵채팅 이모티콘을 선택하세요.",
+      );
     kind = "emoji";
     text = emoji.label;
   } else {

@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "dev:solo": "vite --mode solo --host 0.0.0.0",
     "build:pages": "tsc --noEmit && vite build --mode pages",
+    "build:community": "tsc --noEmit && vite build --mode community",
     "preview:pages": "vite preview --mode pages --host 0.0.0.0",
     "test:pages": "playwright test -c playwright.pages.config.ts",
     "test:peer": "playwright test -c playwright.peer.config.ts"

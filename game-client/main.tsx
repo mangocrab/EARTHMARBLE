@@ -22,10 +22,14 @@ const Dice = React.lazy(() =>
 );
 import {
   ChatPanel,
+  ChatComposer,
+  CommunityAvatar,
   ObserversPanel,
   ProfilePanel,
   type ProfileCard,
 } from "./SocialPanels";
+import { gameURL } from "./urls";
+import type { Emoji } from "../game-social";
 import { emojiSource } from "./emojis";
 import { localStats, saveLocalResult } from "./stats";
 import {
@@ -126,6 +130,10 @@ function App() {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     writeSetting("earth-dark", String(dark));
   }, [dark]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [turnNotice, setTurnNotice] = useState(false);
+  const chatDock = useRef<HTMLElement | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(true);
   const [volume, updateVolume] = useState(getVolume);
   const [serverURL, setServerURL] = useState(
@@ -156,6 +164,7 @@ function App() {
     useState<DirectoryStatus>("connecting");
   const [listRefresh, setListRefresh] = useState(0);
   const [joinRoom, setJoinRoom] = useState<RoomListing | null>(null);
+  const [communityEmojis, setCommunityEmojis] = useState<Emoji[] | null>(null);
   const [profile, setProfile] = useState<ProfileCard | null>(null);
   const [myStats, setMyStats] = useState<Stats>(emptyStats);
   const recordedGames = useRef(new Set<string>());
@@ -272,7 +281,7 @@ function App() {
   }, []);
   useEffect(() => {
     if (!me || SOLO) return;
-    const s = io();
+    const s = io({ path: gameURL("socket.io") });
     socket.current = s;
     s.on("connect", () => setConnected(true));
     s.on("disconnect", () => setConnected(false));
@@ -305,14 +314,23 @@ function App() {
       !paymentOpen
     )
       return;
+    if (!panel && document.activeElement?.hasAttribute("data-chat-input"))
+      return;
     const before = document.activeElement as HTMLElement;
     const modal =
+      (panel
+        ? document.querySelector<HTMLElement>('.social-modal [role="dialog"]')
+        : null) ??
       document.querySelector<HTMLElement>(
         '.card-reveal-overlay [role="dialog"]',
-      ) ?? document.querySelector<HTMLElement>('[role="dialog"]');
+      ) ??
+      document.querySelector<HTMLElement>('[role="dialog"]');
     if (!modal) return;
     const first = () =>
-      modal?.querySelector<HTMLElement>("button:not([disabled]),input,select");
+      modal?.querySelector<HTMLElement>("[data-chat-input]") ??
+      modal?.querySelector<HTMLElement>(
+        "button:not([disabled]),input,select,textarea",
+      );
     (first() ?? modal)?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -323,7 +341,7 @@ function App() {
       if (e.key === "Tab" && modal) {
         const nodes = [
           ...modal.querySelectorAll<HTMLElement>(
-            'button:not([disabled]),input,select,[tabindex="0"]',
+            'button:not([disabled]),input,select,textarea,[tabindex="0"]',
           ),
         ].filter((n) => !n.closest("[inert]"));
         const a = nodes[0],
@@ -345,7 +363,12 @@ function App() {
       document.removeEventListener("keydown", key);
       before?.focus();
     };
-  }, [panel, selected, back, state.room?.game?.phase, paymentOpen]);
+  }, [
+    panel,
+    panel ? null : selected,
+    panel ? null : state.room?.game?.phase,
+    panel ? false : paymentOpen,
+  ]);
   const room = state.room,
     g = room?.game,
     isSpectator = !!room?.isSpectator,
@@ -480,6 +503,19 @@ function App() {
   useEffect(() => {
     if (!state.matching) setDeclinedSlow(false);
   }, [state.matching]);
+  useEffect(() => {
+    if (SOLO || !me) return;
+    let disposed = false;
+    fetch(gameURL("api/emojis"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((value) => {
+        if (!disposed && Array.isArray(value)) setCommunityEmojis(value);
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, [me?.id, panel === "emojis"]);
   async function openProfile(id: string) {
     const member = room?.members.find((m) => m.id === id),
       player = g?.players.find((p) => p.id === id);
@@ -487,6 +523,10 @@ function App() {
       id,
       name: member?.name || player?.name || me?.name || "탐사대원",
       profile: member?.profile,
+      banner: member?.banner,
+      frame: member?.frame,
+      title: member?.title,
+      url: member?.url,
       stats: validStats(member?.stats)
         ? member.stats
         : id === me?.id
@@ -499,7 +539,9 @@ function App() {
     setPanel("profile");
     if (!SOLO && !base.ai) {
       try {
-        const response = await fetch(`/api/profile/${encodeURIComponent(id)}`);
+        const response = await fetch(
+          gameURL(`api/profile/${encodeURIComponent(id)}`),
+        );
         if (response.ok) {
           const card = await response.json();
           if (validStats(card.stats))
@@ -525,21 +567,26 @@ function App() {
     const deckWidth = deck?.width || 32,
       deckHeight = deck?.height || 43;
     const aspect = deckWidth / deckHeight;
+    const headerHeight =
+      document.querySelector(".header")?.getBoundingClientRect().height || 48;
+    const chatHeight = chatDock.current?.getBoundingClientRect().height || 96;
+    const availableHeight =
+      (visualViewport?.height || innerHeight) - headerHeight - chatHeight;
     const revealWidth = Math.min(
       390,
       innerWidth * 0.9,
-      (innerHeight - 50) * aspect,
+      Math.max(80, availableHeight - 24) * aspect,
     );
     setDrawOrigin({
       "--draw-x": `${x - innerWidth / 2}px`,
-      "--draw-y": `${y - innerHeight / 2}px`,
+      "--draw-y": `${y - (headerHeight + availableHeight / 2)}px`,
       "--draw-scale": `${deckWidth / revealWidth}`,
       "--deck-width": `${deckWidth}px`,
       "--reveal-width": `${revealWidth}px`,
       "--reveal-height": `${revealWidth / aspect}px`,
       "--deck-height": `${deckHeight}px`,
     } as React.CSSProperties);
-  }, [g?.phase, g?.deckVersion]);
+  }, [g?.phase, g?.deckVersion, boardPixels]);
   const paymentDecision = !!(
     myTurn &&
     g?.payment &&
@@ -563,6 +610,50 @@ function App() {
   const unreadChat = (room?.chat ?? []).filter(
     (m) => m.actor !== me?.id && m.at > chatSeen,
   ).length;
+  const wasMyTurn = useRef(false);
+  useEffect(() => {
+    if (
+      myTurn &&
+      !wasMyTurn.current &&
+      (["chat", "quick-chat", "emojis"].includes(panel) ||
+        document.activeElement?.hasAttribute("data-chat-input"))
+    )
+      setTurnNotice(true);
+    if (!myTurn || g?.phase === "finished") setTurnNotice(false);
+    wasMyTurn.current = myTurn;
+  }, [myTurn, g?.phase]);
+  useEffect(() => {
+    setChatDraft("");
+    setTurnNotice(false);
+  }, [room?.id]);
+  useLayoutEffect(() => {
+    const dock = chatDock.current,
+      header = document.querySelector(".header");
+    if (!dock || !header) return;
+    const measure = () => {
+      document.documentElement.style.setProperty(
+        "--view-height",
+        `${window.visualViewport?.height || innerHeight}px`,
+      );
+      document.documentElement.style.setProperty(
+        "--chat-height",
+        `${dock.getBoundingClientRect().height}px`,
+      );
+      document.documentElement.style.setProperty(
+        "--game-header-height",
+        `${header.getBoundingClientRect().height}px`,
+      );
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    observer.observe(header);
+    window.visualViewport?.addEventListener("resize", measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
+  }, [room?.id, !!g]);
   type SaleGhost = {
     key: string;
     tile: number;
@@ -665,7 +756,7 @@ function App() {
         setError("");
         return;
       }
-      const r = await fetch("/api/session", {
+      const r = await fetch(gameURL("api/session"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -684,8 +775,8 @@ function App() {
     setLoading(true);
     try {
       const [configResponse, meResponse] = await Promise.all([
-        fetch("/api/config"),
-        fetch("/api/me"),
+        fetch(gameURL("api/config")),
+        fetch(gameURL("api/me")),
       ]);
       if (!configResponse.ok)
         throw new Error("환경 정보를 확인하지 못했습니다.");
@@ -699,7 +790,7 @@ function App() {
       if (meResponse.status !== 401)
         throw new Error("접속 정보를 확인하지 못했습니다.");
       if (config.identityMode === "external") {
-        const response = await fetch("/api/session", {
+        const response = await fetch(gameURL("api/session"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: "{}",
@@ -778,8 +869,11 @@ function App() {
     return controller;
   }
   function command(data: Record<string, unknown>, done?: () => void) {
-    if (!connected || (busy && data.type !== "cancel")) return;
-    setBusy(true);
+    const chatting = data.type === "chat";
+    if (!connected || (chatting ? chatBusy : busy && data.type !== "cancel"))
+      return;
+    const pending = chatting ? setChatBusy : setBusy;
+    pending(true);
     const envelope = {
       requestId: crypto.randomUUID(),
       version: room?.version ?? 0,
@@ -857,7 +951,7 @@ function App() {
           }
           setError((e as Error).message);
         } finally {
-          if (!stale) setBusy(false);
+          if (!stale) pending(false);
         }
       })();
       return;
@@ -873,7 +967,7 @@ function App() {
               deliver(false);
               return;
             }
-            setBusy(false);
+            pending(false);
             if (timeout)
               setError(
                 "응답을 확인하지 못했습니다. 재접속 후 상태를 확인하세요.",
@@ -1383,13 +1477,11 @@ function App() {
             {room.members.map((m, i) => (
               <article key={m.id}>
                 <span className="avatar" style={{ background: colors[i] }}>
-                  {m.profile ? (
-                    <img src={m.profile} alt="" />
-                  ) : m.ai ? (
-                    "◇"
-                  ) : (
-                    m.name.slice(0, 1)
-                  )}
+                  <CommunityAvatar
+                    name={m.ai ? "◇" : m.name}
+                    profile={m.profile}
+                    frame={m.frame}
+                  />
                 </span>
                 <h3>
                   <button
@@ -1517,16 +1609,13 @@ function App() {
                 >
                   <div className="player-heading">
                     <span className="avatar" style={{ background: colors[i] }}>
-                      {room.members.find((m) => m.id === q.id)?.profile ? (
-                        <img
-                          src={room.members.find((m) => m.id === q.id)!.profile}
-                          alt=""
-                        />
-                      ) : q.ai ? (
-                        "◇"
-                      ) : (
-                        q.name.slice(0, 1)
-                      )}
+                      <CommunityAvatar
+                        name={q.ai ? "◇" : q.name}
+                        profile={
+                          room.members.find((m) => m.id === q.id)?.profile
+                        }
+                        frame={room.members.find((m) => m.id === q.id)?.frame}
+                      />
                     </span>
                     <b>
                       <small className="turn-number">{order + 1}번</small>{" "}
@@ -1690,7 +1779,7 @@ function App() {
                     ? ({
                         width: boardPixels,
                         height: boardPixels,
-                        "--tile-font": `${Math.max(7, Math.min(10, boardPixels / 27))}px`,
+                        "--tile-font": `${Math.max(5, Math.min(10, boardPixels / 27))}px`,
                       } as React.CSSProperties)
                     : undefined
                 }
@@ -2035,42 +2124,41 @@ function App() {
         <section
           className={`chat-preview ${g ? "in-game" : ""} ${unreadChat ? "has-unread" : ""}`}
           aria-label="최근 채팅"
+          ref={chatDock}
         >
-          <button
-            onClick={() => setPanel("chat")}
-            className="chat-preview-open primary"
-          >
-            <b>
-              <svg
-                viewBox="0 0 24 24"
-                width="19"
-                height="19"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 4h16v12H9l-5 4V4Z"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-              </svg>{" "}
-              채팅 열기
-              {unreadChat > 0 && (
-                <span
-                  className="chat-unread"
-                  aria-label={`안 읽은 채팅 ${unreadChat}개`}
+          <div className="chat-preview-toolbar">
+            <button
+              onClick={() => setPanel("chat")}
+              className="chat-preview-open primary"
+            >
+              <b>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="19"
+                  height="19"
+                  aria-hidden="true"
                 >
-                  {Math.min(99, unreadChat)}
-                </span>
-              )}
-            </b>
-            <span>
-              {room.mode && room.mode !== "private"
-                ? "퀵채팅"
-                : "메시지 보내기"}{" "}
-              ↗
-            </span>
-          </button>
+                  <path
+                    d="M4 4h16v12H9l-5 4V4Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  />
+                </svg>{" "}
+                채팅 열기
+                {unreadChat > 0 && (
+                  <span
+                    className="chat-unread"
+                    aria-label={`안 읽은 채팅 ${unreadChat}개`}
+                  >
+                    {Math.min(99, unreadChat)}
+                  </span>
+                )}
+              </b>
+            </button>
+            <button onClick={() => setPanel("quick-chat")}>퀵채팅</button>
+            <button onClick={() => setPanel("emojis")}>이모티콘</button>
+          </div>
           <div className="chat-preview-lines" aria-live="polite">
             {state.reconnecting ? (
               <p role="status">방 연결 복구 중 · 잠시만 기다려 주세요.</p>
@@ -2102,7 +2190,39 @@ function App() {
               </p>
             )}
           </div>
+          {me && (!room.mode || room.mode === "private") && (
+            <ChatComposer
+              room={room}
+              meId={me.id}
+              now={now}
+              busy={chatBusy || !connected}
+              command={command}
+              draft={chatDraft}
+              setDraft={setChatDraft}
+              inline
+            />
+          )}
         </section>
+      )}
+      {turnNotice && (
+        <aside className="chat-turn-notice" role="alert">
+          <b>내 차례입니다!</b>
+          <span>채팅을 마치고 게임을 진행해 주세요.</span>
+          <button
+            onClick={() => {
+              setPanel("");
+              setTurnNotice(false);
+            }}
+          >
+            게임으로 돌아가기
+          </button>
+          <button
+            aria-label="내 차례 알림 닫기"
+            onClick={() => setTurnNotice(false)}
+          >
+            ×
+          </button>
+        </aside>
       )}
       <footer className="footer">
         <span>EARTH MARBLE © {new Date().getFullYear()}</span>
@@ -2262,13 +2382,15 @@ function App() {
         )}
       {panel &&
         (g?.phase !== "finished" ||
-          ["chat", "profile", "observers"].includes(panel)) && (
+          ["chat", "quick-chat", "emojis", "profile", "observers"].includes(
+            panel,
+          )) && (
           <div
-            className={`modal-overlay ${["chat", "profile", "observers"].includes(panel) ? "social-modal" : ""}`}
+            className={`modal-overlay ${["chat", "quick-chat", "emojis", "profile", "observers"].includes(panel) ? "social-modal" : ""}`}
             onClick={() => setPanel("")}
           >
             <section
-              className="modal"
+              className={`modal ${["chat", "quick-chat", "emojis"].includes(panel) ? "chat-dialog" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-labelledby="panel-title"
@@ -2286,6 +2408,8 @@ function App() {
                 {
                   {
                     chat: "방 채팅",
+                    "quick-chat": "퀵채팅",
+                    emojis: "이모티콘",
                     observers: "관전 목록",
                     profile: "프로필과 전적",
                     "match-select": "매칭 종류 선택",
@@ -2302,15 +2426,25 @@ function App() {
                   }[panel]
                 }
               </h2>
-              {panel === "chat" && room && me && (
-                <ChatPanel
-                  room={room}
-                  meId={me.id}
-                  now={now}
-                  busy={busy}
-                  command={command}
-                />
-              )}
+              {["chat", "quick-chat", "emojis"].includes(panel) &&
+                room &&
+                me && (
+                  <ChatPanel
+                    room={
+                      communityEmojis
+                        ? { ...room, emojis: communityEmojis }
+                        : room
+                    }
+                    meId={me.id}
+                    now={now}
+                    busy={chatBusy || !connected}
+                    command={command}
+                    draft={chatDraft}
+                    setDraft={setChatDraft}
+                    view={panel}
+                    open={setPanel}
+                  />
+                )}
               {panel === "observers" && room && me && (
                 <ObserversPanel
                   room={room}
@@ -2935,7 +3069,7 @@ function App() {
       )}
       {selected !== null && g?.phase !== "finished" && (
         <div
-          className={`modal-overlay ${decision && selected === p?.position ? "arrival-overlay" : ""}`}
+          className={`modal-overlay property-overlay ${decision && selected === p?.position ? "arrival-overlay" : ""}`}
           role={decision && selected === p?.position ? "dialog" : undefined}
           aria-modal={decision && selected === p?.position ? true : undefined}
           aria-label={BOARD[selected].name + " 상세 카드"}

@@ -104,16 +104,14 @@ describe("공통 채팅 규칙", () => {
           10000 + gap,
         );
         expect(state.chat[1].emoji).toEqual(DEFAULT_EMOJIS[19]);
-        if (mode !== "private")
-          expect(() =>
-            chat(
-              state,
-              actor,
-              spectator,
-              { kind: "emoji", emoji: "site" },
-              10000 + gap * 2,
-            ),
-          ).toThrow("퀵채팅");
+        const site = chat(
+          state,
+          actor,
+          spectator,
+          { kind: "emoji", emoji: "site" },
+          10000 + gap * 2,
+        );
+        expect(site.emoji?.id).toBe("site");
       }
     },
   );

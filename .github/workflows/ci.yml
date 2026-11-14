@@ -15,6 +15,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run build:community
       - name: Check preinstalled Chrome
         run: '"$CHROMIUM_PATH" --version'
       - run: npm run test:e2e

@@ -22,6 +22,15 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: "node --import tsx tests/fixtures/community-host.ts",
+      url: "http://127.0.0.1:3220/community/ping",
+      env: {
+        NODE_ENV: "production",
+        SITE_TEST_SIGNING_KEY: "earth-tests-only",
+      },
+      reuseExistingServer: false,
+    },
+    {
       command:
         "node --import ./tests/fixtures/controlled-clock.mjs --import tsx game-server/index.ts",
       url: "http://127.0.0.1:3198/api/health",

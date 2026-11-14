@@ -33,8 +33,47 @@ Pages 삽입은 게임 닉네임으로 바로 실행합니다. 기존 사이트�
 
 ## 프로필·전적과 서버 이모티콘
 
-`IdentityAdapter.profile(id)`를 선택적으로 구현하면 프로필 창의 이름·사진·사이트 프로필 링크를 공급할 수 있습니다. 반환값은 `{ name?, profile?, url? }`이며 사진과 링크는 HTTPS 또는 사이트 절대 경로를 사용합니다. 로그인 연동과 별도로 나중에 추가해도 됩니다. 설정하지 않으면 임시 프로필을 표시합니다.
+`IdentityAdapter.profile(id)`를 선택적으로 구현하면 프로필 창의 이름·사진·사이트 프로필 링크를 공급할 수 있습니다. 반환값은 `{ name?, profile?, banner?, frame?, title?, url? }`이며 사진과 링크는 HTTPS 또는 사이트 절대 경로를 사용합니다. 로그인 연동과 별도로 나중에 추가해도 됩니다. 설정하지 않으면 임시 프로필을 표시합니다.
 
 인증된 `GET /api/profile/:id`는 서버가 집계한 `{ id, name, profile?, url?, stats, source: "server" }`를 반환합니다. `stats`는 `2`, `3`, `4` 키마다 `{ games, wins, losses }`입니다. 게임 종료 시 서버 SQLite `game_results`에 `(game_id,user_id)`당 한 번만 저장하며 클라이언트가 승패를 제출하는 API는 없습니다. 기존 사이트에서 집계하려면 이 조회 경로 또는 같은 DB의 결과 행을 연결하세요. Pages 기기 기록은 계정 서버 전적으로 자동 승격하지 않습니다.
 
-서버 실행 환경에서 `EMOJI_CATALOG_FILE`에 JSON 목록 파일을 지정하세요. 항목은 `{ "id": "leaf", "label": "새싹", "url": "/site-emojis/leaf.webp" }` 또는 `{ "id": "earth", "label": "지구", "text": "🌍" }`입니다. 최대 100개이며 URL은 HTTPS 또는 사이트 절대 경로만 허용합니다. `EMOJI_STATIC_DIR`을 지정하면 해당 디렉터리를 `/site-emojis`로 제공합니다. 이미 사이트에서 제공하는 HTTPS 이미지 URL도 그대로 쓸 수 있습니다. 설정 변경 후 서버를 재시작하며 새로 만든 방부터 적용됩니다. 양이·지온 원본 20종은 기본 제공되며 기존 저장 방에도 추가됩니다. `yangi_01`~`yangi_10`, `jion_01`~`jion_10` ID는 원본 전용이므로 사이트 카탈로그로 덮어쓸 수 없습니다. 매칭 게임에서는 정해진 문구와 이 원본 이모티콘만 퀵채팅으로 허용하고 자유 입력·사이트 추가 이모티콘은 서버에서 거절합니다.
+서버 실행 환경에서 `EMOJI_CATALOG_FILE`에 JSON 목록 파일을 지정하세요. 항목은 `{ "id": "leaf", "label": "새싹", "url": "/site-emojis/leaf.webp" }` 또는 `{ "id": "earth", "label": "지구", "text": "🌍" }`입니다. 최대 100개이며 URL은 HTTPS 또는 사이트 절대 경로만 허용합니다. `EMOJI_STATIC_DIR`을 지정하면 해당 디렉터리를 `/site-emojis`로 제공합니다. 이미 사이트에서 제공하는 HTTPS 이미지 URL도 그대로 쓸 수 있습니다. 설정 변경 후 서버를 재시작하며 새로 만든 방부터 적용됩니다. 양이·지온 원본 20종은 기본 제공되며 기존 저장 방에도 추가됩니다. `yangi_01`~`yangi_10`, `jion_01`~`jion_10` ID는 원본 전용이므로 사이트 카탈로그로 덮어쓸 수 없습니다. 매칭 게임에서는 정해진 문구와 원본·커뮤니티 카탈로그 이모티콘을 허용하고 자유 텍스트는 서버에서 거절합니다.
+
+## 커뮤니티와 같은 HTTP 서버에 붙이기
+
+`npm run build:community`는 기본 경로 `/minigames/earthmarble/`에 맞춘 `dist-community`를 만듭니다. 경로를 바꾸려면 빌드 때 `GAME_BASE_PATH`와 서버의 `basePath`를 동일하게 지정하세요. 게임 API·Socket.IO·이미지 경로도 이 경로를 따릅니다. 기존 커뮤니티 Express 앱과 HTTP 서버를 그대로 전달할 수 있습니다.
+
+```ts
+import { createEarthMarble } from "./EARTHMARBLE/game-server/index";
+
+// app과 httpServer는 커뮤니티가 이미 사용하는 Express 앱·HTTP 서버입니다.
+await createEarthMarble({
+  app,
+  httpServer,
+  basePath: "/minigames/earthmarble/",
+  distDir: "./EARTHMARBLE/dist-community",
+  dataDir: "./data/earthmarble",
+  development: false,
+  identityAdapter: {
+    async resolve(request) {
+      // 커뮤니티가 검증한 세션 쿠키로 실제 회원을 조회합니다.
+      const member = await communitySessions.resolve(request.headers.cookie);
+      if (!member) return null;
+      return { id: String(member.id), name: member.nickname, ...member.gameProfile };
+    },
+    async profile(id) {
+      return communityMembers.gameProfile(id);
+    },
+    async emojis(identity) {
+      return communityEmojis.availableTo(identity.id);
+    },
+  },
+});
+// httpServer.listen(...)은 기존 커뮤니티 진입점에서 한 번만 호출합니다.
+```
+
+예시의 `communitySessions`, `communityMembers`, `communityEmojis`는 실제 커뮤니티 구현으로 연결해야 하는 함수입니다. 게임은 커뮤니티 비밀번호를 따로 저장하거나 새 게임 계정을 만들지 않습니다. 인증 어댑터가 전달한 회원 ID를 사용하며, 클라이언트가 임의로 보낸 회원 ID·사진·칭호는 인증에 사용하지 않습니다. 위 구조는 닉네임·비밀번호 로그인 방식에도 적용되지만 실제 커뮤니티의 세션 검증 코드 없이는 운영 연동이 완료된 것이 아닙니다.
+
+`resolve`와 `profile`은 `profile`(사진 URL), `banner`, `frame`, `title`, `url`을 받을 수 있습니다. 사진·배너·테두리는 HTTPS 또는 사이트 절대 경로, 칭호는 최대 40자입니다. 프로필 창에 배너·사진·테두리·칭호를 표시하고, 대기실과 게임의 사진에도 테두리를 적용합니다. 어댑터 `emojis(identity)`는 그 회원이 사용할 수 있는 `{ id, label, url }` 목록을 반환합니다. 인증된 `GET /api/emojis`에서 카탈로그를 조회하고, 전송 시 서버가 소유·사용 권한을 다시 검사합니다. 개인 방과 매칭 모두 카탈로그 이모티콘을 보낼 수 있으며 매칭의 자유 텍스트는 계속 금지합니다.
+
+게임은 `/minigames/earthmarble/`를 직접 열거나 같은 출처의 iframe으로 삽입합니다. 커뮤니티 세션 쿠키가 이 경로에도 전송되도록 쿠키 경로를 설정하세요. `createEarthMarble`은 별도 포트를 열지 않으며, 반환된 `close()`는 HTTP 서버까지 종료하므로 전체 서비스 종료 시에만 호출합니다. Pages 배포는 독립 실행 데모이며 커뮤니티 회원 서버를 대신하지 않습니다.

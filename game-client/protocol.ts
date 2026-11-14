@@ -8,7 +8,8 @@ import type {
   GameResult,
 } from "../game-social";
 import type { GameView } from "../game-core";
-export type Member = {
+import type { CommunityProfile } from "../identity-adapter";
+export type Member = CommunityProfile & {
   id: string;
   name: string;
   ready: boolean;
