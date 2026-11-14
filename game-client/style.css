@@ -1683,7 +1683,7 @@ small {
   width: 32px;
   height: 43px;
   background: #315346;
-  border: 3px double #bbc9aa;
+  border: 1px double #bbc9aa;
   border-radius: 4px;
   box-shadow:
     3px -3px 0 #c8d1ba,
@@ -2915,7 +2915,7 @@ small {
   width: var(--deck-width, 32px);
   height: var(--deck-height, 43px);
   background: #1c4b40;
-  border: 3px solid #eadca6;
+  border: 1px solid #eadca6;
   border-radius: 6px;
   box-shadow:
     4px 4px 0 #eee1b4,
@@ -2966,7 +2966,7 @@ small {
   justify-content: center;
   backface-visibility: hidden;
   transform: rotateY(180deg);
-  border: 3px double #eadca6;
+  border: 8px double #eadca6;
   border-radius: 14px;
   background: repeating-linear-gradient(
     45deg,
