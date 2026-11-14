@@ -1070,6 +1070,36 @@ for (const [width, height] of [
       if (width <= 1190) await wholeBoard(page);
       else {
         await visibleStatus(page);
+        expect(
+          await page.locator(".game-layout").evaluate((layout) => {
+            const box = layout.getBoundingClientRect();
+            return [
+              ...layout.querySelectorAll(
+                ".players-panel .player, .players-panel .fund-panel, .players-panel .game-meta, .players-panel > .text-button, .personal-buttons button",
+              ),
+            ].every((el) => {
+              const r = el.getBoundingClientRect();
+              return (
+                r.top >=
+                  Math.max(
+                    box.top,
+                    el
+                      .closest(".players-panel,.personal-panel")!
+                      .getBoundingClientRect().top,
+                  ) &&
+                r.bottom <=
+                  Math.min(
+                    box.bottom,
+                    el
+                      .closest(".players-panel,.personal-panel")!
+                      .getBoundingClientRect().bottom,
+                  ) &&
+                r.left >= 0 &&
+                r.right <= innerWidth
+              );
+            });
+          }),
+        ).toBe(true);
         await expect(
           page.getByRole("button", { name: /^주사위 굴리기/ }),
         ).toBeInViewport();

@@ -1705,11 +1705,13 @@ function App() {
               <small>환급소에 도착하면 모두 받아요.</small>
             </div>
             <div className="game-meta">
-              {SOLO && !peerRoom.current
-                ? "싱글플레이 · 내 기기에 자동 저장"
-                : `온라인 방 ${room.code}`}{" "}
-              · 남은 탐사 {Math.max(0, Math.ceil((g.endsAt - gameNow) / 60000))}
-              분
+              <span className="game-connection-note">
+                {SOLO && !peerRoom.current
+                  ? "싱글플레이 · 내 기기에 자동 저장"
+                  : `온라인 방 ${room.code}`}{" "}
+                ·{" "}
+              </span>
+              남은 탐사 {Math.max(0, Math.ceil((g.endsAt - gameNow) / 60000))}분
             </div>
             <button className="text-button" onClick={() => setPanel("help")}>
               게임 방법 ↗
