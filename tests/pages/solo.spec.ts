@@ -1323,3 +1323,79 @@ test("이동·카드 공개 중에도 하단에서 입력하고 다크모드 덱
   await expect(input).toBeInViewport();
   await page.screenshot({ path: "test-results-pages/dark-chat-draw.png" });
 });
+
+for (const [width, height] of [
+  [390, 844],
+  [1440, 900],
+]) {
+  test(`${width}px: 다크모드는 뽑기 덱과 뒷면 디자인을 유지하고 색만 바꾼다`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await start(page);
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+    await page.getByRole("button", { name: /^주사위 굴리기/ }).click();
+    await page.clock.fastForward(3500);
+    await expect(page.locator(".drawn-card")).toBeVisible();
+    await page.locator(".drawn-card").evaluate((el) => {
+      const animation = el.getAnimations()[0];
+      animation.pause();
+      animation.currentTime = 900;
+    });
+    const geometry = async () =>
+      page.evaluate(() => {
+        const selectors = [
+          ".deck-back",
+          ".draw-source-deck",
+          ".drawn-card",
+          ".draw-card-back",
+          ".draw-card-back span",
+          ".draw-card-back b",
+        ];
+        const shape = (value: string) =>
+          value.replace(/rgba?\([^)]*\)/g, "COLOR");
+        return selectors.map((selector) => {
+          const el = document.querySelector(selector)!,
+            s = getComputedStyle(el);
+          return {
+            selector,
+            text: el.textContent,
+            width: s.width,
+            height: s.height,
+            borderWidth: s.borderWidth,
+            borderStyle: s.borderStyle,
+            borderRadius: s.borderRadius,
+            fontSize: s.fontSize,
+            fontWeight: s.fontWeight,
+            letterSpacing: s.letterSpacing,
+            transform: s.transform,
+            backfaceVisibility: s.backfaceVisibility,
+            pattern: shape(s.backgroundImage),
+            layers: shape(s.boxShadow),
+          };
+        });
+      });
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "light";
+    });
+    const light = await geometry();
+    await page.screenshot({
+      path: `test-results-pages/deck-back-light-${width}.png`,
+    });
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = "dark";
+    });
+    expect(await geometry()).toEqual(light);
+    // An opaque rotating container hides its own back face during the flip.
+    expect(
+      await page
+        .locator(".drawn-card")
+        .evaluate((el) => getComputedStyle(el).backgroundColor),
+    ).toBe("rgba(0, 0, 0, 0)");
+    await expect(page.locator(".draw-card-back b")).toContainText("EARTH");
+    await page.screenshot({
+      path: `test-results-pages/deck-back-dark-${width}.png`,
+    });
+  });
+}
