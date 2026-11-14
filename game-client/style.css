@@ -2966,7 +2966,7 @@ small {
   justify-content: center;
   backface-visibility: hidden;
   transform: rotateY(180deg);
-  border: 8px double #eadca6;
+  border: 3px double #eadca6;
   border-radius: 14px;
   background: repeating-linear-gradient(
     45deg,
